@@ -1,0 +1,17 @@
+services:
+  api:
+    build: ./backend
+    container_name: medapp_backend
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+#      ConnectionStrings__Postgres: write connection strings here
+
+  frontend:
+    build: ./frontend
+    container_name: medapp_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
