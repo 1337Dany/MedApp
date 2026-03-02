@@ -25,15 +25,15 @@ INSERT INTO Users (FirstName, LastName, DateOfBirth, Email, HashedPassword, Data
 
 -- Subjects
 INSERT INTO Subject (UserId, Name, ExamDate, PlanningMethodId, Priority, StudyMode, ColorHex) VALUES
-    ((SELECT Id FROM Users WHERE Email='alice.johnson@example.com'), 'Math', '2026-06-10', 1, 1, 'Practice', '#FF5733'),
-    ((SELECT Id FROM Users WHERE Email='alice.johnson@example.com'), 'History', '2026-05-15', 2, 2, 'Reading', '#33FF57'),
-    ((SELECT Id FROM Users WHERE Email='bob.smith@example.com'), 'Physics', '2026-07-01', 3, 1, 'Flashcards', '#3357FF');
+    ((SELECT Id FROM Users WHERE Email='alice.johnson@example.com'), 'Math', '2026-06-10', 1, 1, 'Determined', '#FF5733'),
+    ((SELECT Id FROM Users WHERE Email='alice.johnson@example.com'), 'History', '2026-05-15', 2, 2, 'Relaxed', '#33FF57'),
+    ((SELECT Id FROM Users WHERE Email='bob.smith@example.com'), 'Physics', '2026-07-01', 3, 1, 'Emergency', '#3357FF');
 
 -- Topic
 INSERT INTO Topic (TopicTitle, Notes, SubjectId, Feedback) VALUES
-    ('Algebra Basics', 'Focus on linear equations', (SELECT SubjectId FROM Subject WHERE Name='Math'), 'Easy'),
-    ('World War II', 'Include main battles', (SELECT SubjectId FROM Subject WHERE Name='History'), 'Medium'),
-    ('Newton Laws', 'Important formulas', (SELECT SubjectId FROM Subject WHERE Name='Physics'), 'Hard');
+    ('Algebra Basics', 'Focus on linear equations', (SELECT SubjectId FROM Subject WHERE Name='Math'), 'Green'),
+    ('World War II', 'Include main battles', (SELECT SubjectId FROM Subject WHERE Name='History'), 'Yellow'),
+    ('Newton Laws', 'Important formulas', (SELECT SubjectId FROM Subject WHERE Name='Physics'), 'Red');
 
 -- RecurringOptions
 INSERT INTO RecurringOptions (Frequency) VALUES
@@ -47,7 +47,17 @@ INSERT INTO OptionsDayOfWeek (RecurringOptionsId, DayOfWeek) VALUES
     ((SELECT RecurringOptionsId FROM RecurringOptions WHERE Frequency='Weekly'), 'Friday');
 
 -- Activities
-INSERT INTO Activity (SubjectId, Title, ActivityTypeId, Priority, StartTime, DurationMinutes, IsRecurring, RecurringOptionsId, IsNegotiable, Notes, Status) VALUES
-    ((SELECT SubjectId FROM Subject WHERE Name='Math'), 'Algebra Practice', 1, 1, '2026-04-01 10:00', 60, true, (SELECT RecurringOptionsId FROM RecurringOptions WHERE Frequency='Daily'), false, 'Do problems 1-10', 'Planned'),
-    ((SELECT SubjectId FROM Subject WHERE Name='History'), 'History Reading', 1, 2, '2026-04-02 14:00', 45, false, NULL, true, 'Read chapters 3-4', 'InProgress'),
-    ((SELECT SubjectId FROM Subject WHERE Name='Physics'), 'Physics Flashcards', 1, 1, '2026-04-03 16:00', 30, true, (SELECT RecurringOptionsId FROM RecurringOptions WHERE Frequency='Weekly'), true, 'Focus on formulas', 'Planned');
+INSERT INTO Activity
+(SubjectId, Title, ActivityTypeId, Priority, StartTime, DurationMinutes,
+ IsRecurring, RecurringOptionsId, IsNegotiable, Notes, Status)
+VALUES
+    ((SELECT SubjectId FROM Subject WHERE Name='Math'), 'Algebra Practice', 1, 1, '2026-04-01 10:00', 60, true,
+     (SELECT RecurringOptionsId FROM RecurringOptions WHERE Frequency='Daily'),
+     false, 'Do problems 1-10', 'Scheduled'),
+
+    ((SELECT SubjectId FROM Subject WHERE Name='History'), 'History Reading', 1, 2, '2026-04-02 14:00', 45, false,
+     NULL, true, 'Read chapters 3-4', 'Partially Done'),
+
+    ((SELECT SubjectId FROM Subject WHERE Name='Physics'), 'Physics Flashcards', 1, 1, '2026-04-03 16:00', 30, true,
+     (SELECT RecurringOptionsId FROM RecurringOptions WHERE Frequency='Weekly'),
+     true, 'Focus on formulas', 'Scheduled');

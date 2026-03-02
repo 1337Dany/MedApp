@@ -1,5 +1,7 @@
 var builder = WebApplication.CreateBuilder(args);
 
+var connectionString = builder.Configuration["ConnectionStrings:Postgres"];
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

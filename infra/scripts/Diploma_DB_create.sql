@@ -1,35 +1,27 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TYPE feedback_enum AS ENUM (
-    'Unknown',
-    'Easy',
-    'Medium',
-    'Hard',
-    'NeedsRevision'
+    'Red',
+    'Yellow',
+    'Green'
 );
 
 CREATE TYPE study_mode_enum AS ENUM (
-    'Reading',
-    'Practice',
-    'Flashcards',
-    'Lecture',
-    'Mixed'
+    'Relaxed',
+    'Determined',
+    'Emergency'
 );
 
 CREATE TYPE status_enum AS ENUM (
-    'Planned',
-    'InProgress',
-    'Completed',
-    'Cancelled',
+    'Scheduled',
+    'Partially Done',
+    'Done',
     'Skipped'
 );
 
 CREATE TYPE frequency_enum AS ENUM (
-    'Once',
     'Daily',
-    'Weekly',
-    'Monthly',
-    'Custom'
+    'Weekly'
 );
 
 CREATE TYPE day_of_week_enum AS ENUM (
