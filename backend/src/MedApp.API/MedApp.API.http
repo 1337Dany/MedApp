@@ -1,0 +1,6 @@
+@MedApp.API_HostAddress = http://localhost:5001
+
+GET {{MedApp.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

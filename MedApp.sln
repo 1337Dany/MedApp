@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MedApp", "backend\src\MedApp\MedApp.csproj", "{1794F378-2338-45CF-8B1A-DD60AF6A5622}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MedApp.API", "backend\src\MedApp.API\MedApp.API.csproj", "{23D6E051-3AE2-4508-B1B2-335D3B16A121}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -8,9 +8,9 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{1794F378-2338-45CF-8B1A-DD60AF6A5622}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{1794F378-2338-45CF-8B1A-DD60AF6A5622}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1794F378-2338-45CF-8B1A-DD60AF6A5622}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{1794F378-2338-45CF-8B1A-DD60AF6A5622}.Release|Any CPU.Build.0 = Release|Any CPU
+		{23D6E051-3AE2-4508-B1B2-335D3B16A121}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{23D6E051-3AE2-4508-B1B2-335D3B16A121}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{23D6E051-3AE2-4508-B1B2-335D3B16A121}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{23D6E051-3AE2-4508-B1B2-335D3B16A121}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
