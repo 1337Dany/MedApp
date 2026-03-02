@@ -863,3 +863,7 @@ FodyWeavers.xsd
 
 # appsettings
 appsettings.*
+
+# postgres db
+infra/postgres/data
+infra/postgres/init.sql
