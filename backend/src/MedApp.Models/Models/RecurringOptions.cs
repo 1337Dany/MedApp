@@ -8,8 +8,8 @@ public class RecurringOptions
 
     public Frequency Frequency { get; set; }
 
-    public ICollection<DayOfWeekEnum> DaysOfWeek { get; set; }
-        = new List<DayOfWeekEnum>();
+    public ICollection<OptionsDayOfWeek> DaysOfWeek { get; set; }
+        = new List<OptionsDayOfWeek>();
 
     public ICollection<Activity> Activities { get; set; }
         = new List<Activity>();

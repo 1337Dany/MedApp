@@ -1,4 +1,6 @@
-﻿namespace MedApp.Models.Models;
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace MedApp.Models.Models;
 
 public class User
 {
@@ -8,6 +10,7 @@ public class User
     public string LastName { get; set; } = null!;
     public DateOnly DateOfBirth { get; set; }
 
+    [EmailAddress]
     public string Email { get; set; } = null!;
     public string HashedPassword { get; set; } = null!;
     public bool DataPermission { get; set; }
