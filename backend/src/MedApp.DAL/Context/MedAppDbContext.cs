@@ -34,15 +34,19 @@ public class MedAppDbContext : DbContext
         modelBuilder
             .Entity<User>()
             .ToTable("Users", "public");
-        
+
         // apply configs
         modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
 
         modelBuilder.Entity<User>().HasData(
             new User
             {
-                FirstName = "Andrii", LastName = "Sysoiev", HashedPassword = "somehash",
-                DateOfBirth = new DateOnly(2006, 04, 20), Email = "sisoev.a@outlook.com", DataPermission = true,
+                FirstName = "Andrii",
+                LastName = "Sysoiev",
+                HashedPassword = "somehash",
+                DateOfBirth = new DateOnly(2006, 04, 20),
+                Email = "sisoev.a@outlook.com",
+                DataPermission = true,
                 Id = new Guid("8898cf29-4ca3-44c3-82b1-e5c55bc3f549")
             }
         );

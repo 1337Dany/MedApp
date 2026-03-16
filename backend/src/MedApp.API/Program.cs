@@ -14,19 +14,13 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-app.Use(async (context, next) =>
+if (app.Environment.IsDevelopment())
 {
-    Console.WriteLine($"Connection string: {connectionString}");
-
-    await next();
-});
-
-if (app.Environment.IsDevelopment()) {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// app.UseHttpsRedirection();
+app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

@@ -10,23 +10,23 @@ public class ActivityConfig : IEntityTypeConfiguration<Activity>
     {
         builder
             .HasKey(a => a.ActivityId);
-        
+
         builder
             .Property(a => a.ActivityId)
             .ValueGeneratedOnAdd()
             .HasDefaultValueSql("gen_random_uuid()");
-        
+
         builder
             .HasOne(a => a.Subject)
             .WithMany(s => s.Activities)
             .HasForeignKey(a => a.SubjectId)
             .IsRequired();
-        
+
         builder
             .Property(a => a.Title)
             .HasMaxLength(100)
             .IsRequired();
-        
+
         builder
             .HasOne(a => a.ActivityType)
             .WithMany(t => t.Activities)
@@ -36,15 +36,15 @@ public class ActivityConfig : IEntityTypeConfiguration<Activity>
         builder
             .Property(a => a.Priority)
             .IsRequired();
-        
+
         builder
             .Property(a => a.StartTime)
             .IsRequired();
-        
+
         builder
             .Property(a => a.DurationMinutes)
             .IsRequired();
-        
+
         builder
             .Property(a => a.IsRecurring)
             .IsRequired();
@@ -54,7 +54,7 @@ public class ActivityConfig : IEntityTypeConfiguration<Activity>
             .WithMany(r => r.Activities)
             .HasForeignKey(a => a.RecurringOptionsId)
             .IsRequired(false);
-        
+
         builder
             .Property(a => a.IsNegotiable)
             .IsRequired();

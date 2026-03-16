@@ -15,6 +15,6 @@ public class OptionsDayOfWeekConfig : IEntityTypeConfiguration<OptionsDayOfWeek>
             .HasOne(odw => odw.RecurringOptions)
             .WithMany(odw => odw.DaysOfWeek)
             .HasForeignKey(odw => odw.RecurringOptionsId);
-       
+
     }
 }
