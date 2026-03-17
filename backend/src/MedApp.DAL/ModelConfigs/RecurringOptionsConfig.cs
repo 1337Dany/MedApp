@@ -10,17 +10,17 @@ public class RecurringOptionsConfig : IEntityTypeConfiguration<RecurringOptions>
     {
         builder
             .HasKey(ro => ro.RecurringOptionsId);
-        
+
         builder
             .Property(ro => ro.RecurringOptionsId)
             .ValueGeneratedOnAdd()
             .HasDefaultValueSql("gen_random_uuid()");
-        
+
         builder
             .HasMany(ro => ro.DaysOfWeek)
             .WithOne(d => d.RecurringOptions)
             .HasForeignKey(d => d.RecurringOptionsId);
-        
+
         builder
             .HasMany(ro => ro.Activities)
             .WithOne(a => a.RecurringOptions)
