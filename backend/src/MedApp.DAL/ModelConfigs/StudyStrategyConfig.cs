@@ -10,7 +10,7 @@ public class StudyStrategyConfig : IEntityTypeConfiguration<StudyStrategy>
     {
         builder
             .HasKey(ss => ss.MethodId);
-        
+
         builder
             .Property(ss => ss.MethodId)
             .ValueGeneratedOnAdd();
