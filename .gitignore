@@ -867,3 +867,6 @@ appsettings.*
 # postgres db
 infra/postgres/data
 infra/postgres/init.sql
+
+postgres/data
+postgres/init.sql

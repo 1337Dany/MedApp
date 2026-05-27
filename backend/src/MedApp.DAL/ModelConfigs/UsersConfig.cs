@@ -32,6 +32,10 @@ public class UsersConfig : IEntityTypeConfiguration<User>
             .IsRequired();
 
         builder
+            .HasIndex(u => u.Email)
+            .IsUnique();
+
+        builder
             .Property(u => u.DateOfBirth)
             .IsRequired();
 
@@ -41,6 +45,11 @@ public class UsersConfig : IEntityTypeConfiguration<User>
 
         builder
             .Property(u => u.DataPermission)
+            .IsRequired();
+
+        builder
+            .Property(u => u.Role)
+            .HasDefaultValue(Models.Models.Enums.UserRole.User)
             .IsRequired();
     }
 }
