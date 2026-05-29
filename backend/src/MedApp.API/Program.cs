@@ -1,6 +1,5 @@
 using System.Text;
-using MedApp.DAL;
-using MedApp.Services;
+using MedApp.API;
 using MedApp.Services.Services.Auth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -8,8 +7,7 @@ using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddMedAppDal(builder.Configuration);
-builder.Services.AddMedAppServices(builder.Configuration);
+builder.Services.AddMedAppInfrastructure(builder.Configuration);
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? throw new InvalidOperationException("Jwt configuration section is missing.");

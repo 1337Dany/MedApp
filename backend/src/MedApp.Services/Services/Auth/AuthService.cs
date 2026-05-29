@@ -100,6 +100,7 @@ public class AuthService : IAuthService
 
         var newToken = new RefreshToken
         {
+            Id = Guid.NewGuid(),
             UserId = existing.UserId,
             TokenHash = hashNew,
             CreatedAt = DateTime.UtcNow,
