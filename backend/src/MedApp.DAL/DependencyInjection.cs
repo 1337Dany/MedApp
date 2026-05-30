@@ -38,6 +38,13 @@ public static class DependencyInjection
 
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IActivityRepository, ActivityRepository>();
+        services.AddScoped<IActivityTypeRepository, ActivityTypeRepository>();
+        services.AddScoped<IStudyStrategyRepository, StudyStrategyRepository>();
+        services.AddScoped<IRecurringOptionsRepository, RecurringOptionsRepository>();
+        services.AddScoped<IOptionsDayOfWeekRepository, OptionsDayOfWeekRepository>();
+        services.AddScoped<ITopicRepository, TopicRepository>();
+        services.AddScoped<ISubjectRepository, SubjectRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         return services;
