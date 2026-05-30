@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using MedApp.Models.Models.Enums;
 using Microsoft.EntityFrameworkCore.Migrations;
 
@@ -22,7 +22,6 @@ namespace MedApp.DAL.Migrations
                 .Annotation("Npgsql:Enum:frequency", "daily,weekly")
                 .Annotation("Npgsql:Enum:status", "scheduled,partially_done,done,skipped")
                 .Annotation("Npgsql:Enum:study_mode", "relaxed,determined,emergency")
-                .Annotation("Npgsql:Enum:user_role", "user,admin")
                 .OldAnnotation("Npgsql:Enum:day_of_week_enum", "monday,tuesday,wednesday,thursday,friday,saturday,sunday")
                 .OldAnnotation("Npgsql:Enum:feedback", "red,yellow,green")
                 .OldAnnotation("Npgsql:Enum:frequency", "daily,weekly")
@@ -33,9 +32,9 @@ namespace MedApp.DAL.Migrations
                 name: "Role",
                 schema: "public",
                 table: "Users",
-                type: "user_role",
+                type: "integer",
                 nullable: false,
-                defaultValue: UserRole.User);
+                defaultValue: (int)UserRole.User);
 
             migrationBuilder.UpdateData(
                 schema: "public",
@@ -43,7 +42,7 @@ namespace MedApp.DAL.Migrations
                 keyColumn: "Id",
                 keyValue: new Guid("8898cf29-4ca3-44c3-82b1-e5c55bc3f549"),
                 column: "Role",
-                value: UserRole.Admin);
+                value: (int)UserRole.Admin);
 
             migrationBuilder.CreateTable(
                 name: "RefreshTokens",
@@ -118,8 +117,7 @@ namespace MedApp.DAL.Migrations
                 .OldAnnotation("Npgsql:Enum:feedback", "red,yellow,green")
                 .OldAnnotation("Npgsql:Enum:frequency", "daily,weekly")
                 .OldAnnotation("Npgsql:Enum:status", "scheduled,partially_done,done,skipped")
-                .OldAnnotation("Npgsql:Enum:study_mode", "relaxed,determined,emergency")
-                .OldAnnotation("Npgsql:Enum:user_role", "user,admin");
+                .OldAnnotation("Npgsql:Enum:study_mode", "relaxed,determined,emergency");
 
             // Up no longer deletes the seeded user, so Down doesn't need to re-insert it.
         }

@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using MedApp.Models.Models;
 using MedApp.Models.Models.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -31,7 +31,6 @@ public class MedAppDbContext : DbContext
         modelBuilder.HasPostgresEnum<Status>();
         modelBuilder.HasPostgresEnum<Frequency>();
         modelBuilder.HasPostgresEnum<DayOfWeekEnum>();
-        modelBuilder.HasPostgresEnum<UserRole>();
 
         modelBuilder
             .Entity<User>()
