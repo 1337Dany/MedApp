@@ -1,6 +1,8 @@
 using FluentValidation;
 using MedApp.Models.Models;
 using MedApp.Services.Mapping;
+using MedApp.Services.Repositories;
+using MedApp.Services.Services;
 using MedApp.Services.Services.Auth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
@@ -24,6 +26,14 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();
+
+        services.AddScoped<ISubjectService, SubjectService>();
+        services.AddScoped<ITopicService, TopicService>();
+        services.AddScoped<IActivityService, ActivityService>();
+        services.AddScoped<IActivityTypeService, ActivityTypeService>();
+        services.AddScoped<IStudyStrategyService, StudyStrategyService>();
+        services.AddScoped<IRecurringOptionsService, RecurringOptionsService>();
+        services.AddScoped<IOptionsDayOfWeekService, OptionsDayOfWeekService>();
 
         services.AddAutoMapper(_ => { }, typeof(ServicesAssemblyMarker));
         services.AddValidatorsFromAssembly(typeof(UserProfile).Assembly);
