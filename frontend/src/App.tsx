@@ -1,32 +1,49 @@
 import { useState } from 'react';
-import { Calendar, Book, Activity as ActivityIcon, BarChart3, Settings } from 'lucide-react';
+import { Calendar, Book, Activity as ActivityIcon, BarChart3, Settings, Users } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { CalendarView } from './components/CalendarView';
 import { SubjectsView } from './components/SubjectsView';
 import { ActivitiesView } from './components/ActivitiesView';
 import { AnalyticsView } from './components/AnalyticsView';
+import { TeacherDashboard } from './components/TeacherDashboard';
 import { InitialSetup } from './components/InitialSetup';
+import { AuthModal } from './components/AuthModal';
+import { UserProfile } from './components/UserProfile';
 import { useStore } from './store/useStore';
+import { useAuthStore } from './store/useAuthStore';
 
-type View = 'dashboard' | 'calendar' | 'subjects' | 'activities' | 'analytics';
+type View = 'dashboard' | 'calendar' | 'subjects' | 'activities' | 'analytics' | 'teacher';
 
 export default function App() {
   const { subjects } = useStore();
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const { isAuthenticated, user } = useAuthStore();
+  const [currentView, setCurrentView] = useState<View>(user?.role === 'teacher' ? 'teacher' : 'dashboard');
   const [setupComplete, setSetupComplete] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
-  // Show initial setup if no subjects exist and setup not completed
-  if (subjects.length === 0 && !setupComplete) {
+  // Show auth modal if not authenticated
+  if (!isAuthenticated) {
+    return <AuthModal onClose={() => setShowAuthModal(false)} />;
+  }
+
+  // Show initial setup if no subjects exist and setup not completed (only for students)
+  if (user?.role === 'student' && subjects.length === 0 && !setupComplete) {
     return <InitialSetup onComplete={() => setSetupComplete(true)} />;
   }
 
-  const navigation = [
-    { id: 'dashboard' as const, label: 'Dashboard', icon: BarChart3 },
-    { id: 'calendar' as const, label: 'Calendar', icon: Calendar },
-    { id: 'subjects' as const, label: 'Subjects', icon: Book },
-    { id: 'activities' as const, label: 'Activities', icon: ActivityIcon },
-    { id: 'analytics' as const, label: 'Analytics', icon: BarChart3 },
-  ];
+  // Navigation items based on role
+  const navigation = user?.role === 'teacher' 
+    ? [
+        { id: 'teacher' as const, label: 'Class Overview', icon: Users },
+        { id: 'analytics' as const, label: 'Analytics', icon: BarChart3 },
+      ]
+    : [
+        { id: 'dashboard' as const, label: 'Dashboard', icon: BarChart3 },
+        { id: 'calendar' as const, label: 'Calendar', icon: Calendar },
+        { id: 'subjects' as const, label: 'Subjects', icon: Book },
+        { id: 'activities' as const, label: 'Activities', icon: ActivityIcon },
+        { id: 'analytics' as const, label: 'Analytics', icon: BarChart3 },
+      ];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -40,6 +57,7 @@ export default function App() {
               </div>
               <h1 className="text-xl font-semibold text-gray-900">MedStudy Planner</h1>
             </div>
+            <UserProfile />
           </div>
         </div>
       </header>
@@ -71,7 +89,8 @@ export default function App() {
 
         {/* Main Content */}
         <main className="flex-1 p-6">
-          {currentView === 'dashboard' && <Dashboard />}
+          {user?.role === 'teacher' && currentView === 'teacher' && <TeacherDashboard />}
+          {user?.role === 'student' && currentView === 'dashboard' && <Dashboard />}
           {currentView === 'calendar' && <CalendarView />}
           {currentView === 'subjects' && <SubjectsView />}
           {currentView === 'activities' && <ActivitiesView />}
