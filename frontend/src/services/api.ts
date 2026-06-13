@@ -1,97 +1,177 @@
-// API configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+import { AuthTokens, BackendRole, RegisterPayload, User } from '../types/auth';
 
-// Helper function to get auth token
-const getAuthToken = (): string | null => {
-  return localStorage.getItem('authToken');
+// API configuration
+// Vite exposes env vars prefixed with VITE_ via import.meta.env.
+// Set VITE_API_URL in a .env file to point at your backend, e.g.
+//   VITE_API_URL=http://localhost:8080/api
+const API_BASE_URL =
+    (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080/api';
+
+// ---------------------------------------------------------------------------
+// Token storage helpers
+// ---------------------------------------------------------------------------
+const ACCESS_TOKEN_KEY = 'authToken';
+const REFRESH_TOKEN_KEY = 'refreshToken';
+const USER_KEY = 'user';
+
+export const tokenStorage = {
+  getAccessToken: (): string | null => localStorage.getItem(ACCESS_TOKEN_KEY),
+  getRefreshToken: (): string | null => localStorage.getItem(REFRESH_TOKEN_KEY),
+  setTokens: (tokens: AuthTokens) => {
+    localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
+    localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+  },
+  clearTokens: () => {
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  },
 };
 
-// Helper function for authenticated requests
-const authenticatedFetch = async (url: string, options: RequestInit = {}) => {
-  const token = getAuthToken();
-  
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(token && { 'Authorization': `Bearer ${token}` }),
-    ...options.headers,
-  };
+// ---------------------------------------------------------------------------
+// Low level fetch helpers
+// ---------------------------------------------------------------------------
 
+/**
+ * Performs a fetch against the API and returns the parsed JSON body
+ * (or null for empty / 204 No Content responses). Throws an Error with a
+ * useful message (taken from the backend's ProblemDetails) on failure.
+ */
+const apiFetch = async (url: string, options: RequestInit = {}) => {
   const response = await fetch(`${API_BASE_URL}${url}`, {
     ...options,
-    headers,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Request failed' }));
-    throw new Error(error.message || 'Request failed');
+    const problem = await response.json().catch(() => null);
+    const message =
+        problem?.detail || problem?.title || `Request failed (${response.status})`;
+    throw new Error(message);
   }
 
-  return response.json();
+  if (response.status === 204) {
+    return null;
+  }
+
+  return response.json().catch(() => null);
 };
 
-// Authentication API
-export const authAPI = {
-  login: async (email: string, password: string) => {
-    // TODO: Uncomment and connect to your backend
-    // return authenticatedFetch('/auth/login', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ email, password }),
-    // });
+/**
+ * Same as apiFetch but attaches the current access token. If the request
+ * comes back as 401 and a refresh token is available, it transparently
+ * refreshes the access token once and retries the original request.
+ */
+const authenticatedFetch = async (url: string, options: RequestInit = {}) => {
+  const token = tokenStorage.getAccessToken();
 
-    // Mock response - remove this when connecting to backend
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return {
-      user: {
-        id: crypto.randomUUID(),
-        email,
-        name: email.split('@')[0],
-        role: 'student',
-        createdAt: new Date(),
-      },
-      token: 'mock_jwt_token_' + Date.now(),
-    };
-  },
+  const run = (accessToken: string | null) =>
+      fetch(`${API_BASE_URL}${url}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
+          ...options.headers,
+        },
+      });
 
-  register: async (email: string, password: string, name: string, role: 'student' | 'teacher') => {
-    // TODO: Uncomment and connect to your backend
-    // return authenticatedFetch('/auth/register', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ email, password, name, role }),
-    // });
+  let response = await run(token);
 
-    // Mock response - remove this when connecting to backend
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return {
-      user: {
-        id: crypto.randomUUID(),
-        email,
-        name,
-        role,
-        createdAt: new Date(),
-      },
-      token: 'mock_jwt_token_' + Date.now(),
-    };
-  },
-
-  logout: async () => {
-    // TODO: Uncomment and connect to your backend
-    // return authenticatedFetch('/auth/logout', { method: 'POST' });
-
-    // Mock response - remove this when connecting to backend
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return { message: 'Logged out successfully' };
-  },
-
-  getCurrentUser: async () => {
-    // TODO: Uncomment and connect to your backend
-    // return authenticatedFetch('/auth/me');
-
-    // Mock response - remove this when connecting to backend
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      return { user: JSON.parse(storedUser) };
+  if (response.status === 401) {
+    const refreshToken = tokenStorage.getRefreshToken();
+    if (refreshToken) {
+      try {
+        const tokens = await authAPI.refresh(refreshToken);
+        tokenStorage.setTokens(tokens);
+        response = await run(tokens.accessToken);
+      } catch {
+        tokenStorage.clearTokens();
+      }
     }
-    throw new Error('Not authenticated');
+  }
+
+  if (!response.ok) {
+    const problem = await response.json().catch(() => null);
+    const message =
+        problem?.detail || problem?.title || `Request failed (${response.status})`;
+    throw new Error(message);
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  return response.json().catch(() => null);
+};
+
+// ---------------------------------------------------------------------------
+// Mapping helpers
+// ---------------------------------------------------------------------------
+
+// Backend UserRole enum: User = 0, Admin = 1.
+const mapBackendRole = (role: number | BackendRole): BackendRole => {
+  if (role === 1 || role === 'Admin') return 'Admin';
+  return 'User';
+};
+
+export const mapUserDto = (dto: any): User => {
+  const backendRole = mapBackendRole(dto.role);
+  return {
+    id: dto.id,
+    email: dto.email,
+    firstName: dto.firstName,
+    lastName: dto.lastName,
+    name: `${dto.firstName} ${dto.lastName}`.trim(),
+    dateOfBirth: dto.dateOfBirth,
+    dataPermission: dto.dataPermission,
+    backendRole,
+    role: backendRole === 'Admin' ? 'teacher' : 'student',
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Authentication API -> backend/src/MedApp.API/Controllers/AuthController.cs
+// ---------------------------------------------------------------------------
+export const authAPI = {
+  // POST /api/auth/register
+  register: async (payload: RegisterPayload): Promise<AuthTokens> => {
+    return apiFetch('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // POST /api/auth/login
+  login: async (email: string, password: string): Promise<AuthTokens> => {
+    return apiFetch('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  },
+
+  // POST /api/auth/refresh
+  refresh: async (refreshToken: string): Promise<AuthTokens> => {
+    return apiFetch('/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    });
+  },
+
+  // POST /api/auth/logout (requires auth)
+  logout: async (refreshToken: string): Promise<void> => {
+    await authenticatedFetch('/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    });
+  },
+
+  // GET /api/auth/me (requires auth)
+  getCurrentUser: async (): Promise<User> => {
+    const dto = await authenticatedFetch('/auth/me');
+    return mapUserDto(dto);
   },
 };
 
@@ -127,36 +207,19 @@ export const teacherAPI = {
 
 // Student Data Sync API (for future use)
 export const syncAPI = {
-  // Sync subjects to backend
   syncSubjects: async (subjects: any[]) => {
-    // return authenticatedFetch('/sync/subjects', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ subjects }),
-    // });
     console.log('Sync subjects to backend:', subjects);
   },
 
-  // Sync topics to backend
   syncTopics: async (topics: any[]) => {
-    // return authenticatedFetch('/sync/topics', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ topics }),
-    // });
     console.log('Sync topics to backend:', topics);
   },
 
-  // Sync activities to backend
   syncActivities: async (activities: any[]) => {
-    // return authenticatedFetch('/sync/activities', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ activities }),
-    // });
     console.log('Sync activities to backend:', activities);
   },
 
-  // Fetch user data from backend
   fetchUserData: async () => {
-    // return authenticatedFetch('/sync/user-data');
     return {
       subjects: [],
       topics: [],

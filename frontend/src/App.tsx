@@ -16,12 +16,20 @@ type View = 'dashboard' | 'calendar' | 'subjects' | 'activities' | 'analytics' |
 
 export default function App() {
   const { subjects } = useStore();
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, isLoading, user } = useAuthStore();
   const [currentView, setCurrentView] = useState<View>(user?.role === 'teacher' ? 'teacher' : 'dashboard');
   const [setupComplete, setSetupComplete] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Show auth modal if not authenticated
+  if (isLoading) {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <p className="text-gray-500">Loading...</p>
+        </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return <AuthModal onClose={() => setShowAuthModal(false)} />;
   }

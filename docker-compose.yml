@@ -8,7 +8,13 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
       ConnectionStrings__Postgres: Host=${POSTGRES_HOST};Port=${POSTGRES_PORT};Database=${POSTGRES_DATABASE};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
-      
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      Jwt__Key: ${JWT_KEY}
+      Jwt__AccessTokenMinutes: ${JWT_ACCESS_TOKEN_MINUTES:-60}
+      Jwt__RefreshTokenDays: ${JWT_REFRESH_TOKEN_DAYS:-30}
+      Jwt__ClockSkewSeconds: ${JWT_CLOCK_SKEW_SECONDS:-30}
+  
   postgresql:
     image: postgres:17
     container_name: postgres_db
