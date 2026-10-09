@@ -29,16 +29,24 @@ Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Z
 2. ~~**Dead duplicate DI code.**~~ Fixed on `feature/fixes`: `AddMedAppDal` and `AddMedAppServices` deleted (with them the stray `user_role` enum mapping; `Role` stays `integer`). Two JWT checks remain on the live path, both needed for now: `Program.cs` reads the key before `Build()` for JwtBearer, and DI `ValidateOnStart` also checks Issuer/Audience.
 3. **Compose is not runnable from a clean clone.**
    - Mounts `./postgres/init.sql` and `./postgres/data`. Neither exists in the repo and both are gitignored; Docker will create a directory in place of the missing file. The old `infra/postgres/*` paths were dropped, and `.gitignore` lists both old and new.
-   - The `api` service gets no `Jwt__Key`, `Jwt__Issuer`, `Jwt__Audience`, so the container will exit on start (`appsettings.*` is gitignored too).
-   - `api` lost `depends_on: postgresql`, and nothing applies migrations at start-up. A plain `depends_on` isn't enough once migrations run on start: Postgres needs a `pg_isready` healthcheck and `condition: service_healthy`.
-   - `.env` variable names changed (`POSTGRES_DB` → `POSTGRES_DATABASE`); there is no `.env.example` to document it. Existing local `.env` files still have the old names (`POSTGRES_DB`, `POSTGRES_ROOT_PASSWORD`) and lack `POSTGRES_DATABASE`, `POSTGRES_HOST`, `API_HTTP_PORT`, `ASPNETCORE_ENVIRONMENT` and `Jwt__*`, so compose doesn't run on an existing checkout either.
-   - No `appsettings*.json` exists in `MedApp.API` (gitignored), so local `dotnet run` depends on user-secrets or env vars, and nothing documents which.
-4. **Backend Dockerfile restore step** copies only `MedApp.API.csproj` before `dotnet restore`. The API now references DAL and Services (which reference Models), so restore either fails or the layer cache is wasted. Copy all four `.csproj` files before `restore`. Image not built yet, so unconfirmed.
+   - ~~The `api` service gets no `Jwt__*`.~~ Fixed on `feature/fixes`: compose maps `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_KEY`, `JWT_ACCESS_TOKEN_MINUTES`, `JWT_REFRESH_TOKEN_DAYS`, `JWT_CLOCK_SKEW_SECONDS` from `.env` to `Jwt__*`.
+   - `api` lost `depends_on: postgresql`, and **nothing applies migrations at start-up**. Every fresh database needs a manual update until Phase 0 step 3 lands (run from the repo root, host-side connection string):
+     ```powershell
+     $env:ConnectionStrings__Postgres = "Host=localhost;Port=<POSTGRES_PORT>;Database=<POSTGRES_DATABASE>;Username=<POSTGRES_USER>;Password=<POSTGRES_PASSWORD>"
+     $env:Jwt__Key = "design-time-only-key-0123456789abcdef"   # only has to pass the length check
+     dotnet ef database update --project ./backend/src/MedApp.DAL --startup-project ./backend/src/MedApp.API
+     Remove-Item Env:ConnectionStrings__Postgres, Env:Jwt__Key
+     ```
+     A plain `depends_on` isn't enough once migrations run on start: Postgres needs a `pg_isready` healthcheck and `condition: service_healthy`.
+   - The connection string uses `Port=${POSTGRES_PORT}` (host-mapped port). Inside the compose network it should be `5432`; it works only while `POSTGRES_PORT=5432`.
+   - Compose expects `POSTGRES_DATABASE`, `POSTGRES_HOST`, `API_HTTP_PORT`, `ASPNETCORE_ENVIRONMENT` and `JWT_*`; there is no `.env.example` to document them.
+   - `appsettings.json` / `appsettings.Development.json` exist locally with empty connection string and `Jwt:Key` (env supplies them), but `appsettings.*` is gitignored, so a clean clone has neither. Decide whether to un-ignore `appsettings.json` (no secrets). `.gitignore` also has a dead `appsettings.Developments.json` entry.
+4. **Backend Dockerfile restore step** copies only `MedApp.API.csproj` before `dotnet restore`. The image builds and runs (publish restores again), so this only wastes the layer cache. Copy all four `.csproj` files before `restore`. Cleanup, not a blocker.
 5. ~~**`UseHttpsRedirection()`** with an HTTP-only container.~~ Fixed on `feature/fixes`: removed; TLS belongs at the proxy.
 6. ~~**Lookup data not seeded.**~~ Fixed on `feature/fixes`: `HasData` in `StudyStrategyConfig` (1–3) and `ActivityTypeConfig` (1–9), migration `SeedLookupsRemoveDevUser` (Npgsql also resets the identity sequences past the seeded ids). `infra/scripts/Diploma_DB_seed.sql` is still outdated (no `Role`, no `RefreshTokens`, old table names).
-7. ~~**Seeded dev user.**~~ Fixed on `feature/fixes`: the same migration deletes the placeholder admin row inserted by `NewMigration`; `Down` re-inserts it. Not yet applied to a real database.
-8. **No ownership checks in the service layer yet.** `SubjectService.GetByIdAsync`, `UpdateAsync`, `DeleteAsync` take only an id, and services return/accept EF entities rather than DTOs. When controllers are added, every call must be scoped to the caller's user id, or one user can read or delete another's data. Entities in `UpdateAsync` also invite over-posting; use DTOs.
-9. **`AuthController` details**:
+7. ~~**Seeded dev user.**~~ Fixed on `feature/fixes`: the same migration deletes the placeholder admin row inserted by `NewMigration`; `Down` re-inserts it. Applied to the local compose database; smoke test (`register` → `me`) passes.
+8. **No ownership checks in the service layer yet** (scheduled in Phase 2, step 1). `SubjectService.GetByIdAsync`, `UpdateAsync`, `DeleteAsync` take only an id, and services return/accept EF entities rather than DTOs. When controllers are added, every call must be scoped to the caller's user id, or one user can read or delete another's data. Entities in `UpdateAsync` also invite over-posting; use DTOs.
+9. **`AuthController` details** (scheduled in Phases 1 and 2):
    - Logout is `[Authorize]` but doesn't check that the refresh token belongs to the caller.
    - It injects `IUserRepository` directly (bypasses the service layer).
    - No rate limiting on login/register.
@@ -63,21 +71,31 @@ Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Z
 
 ### Phase 0 — Make it run from a clean clone
 1. Fix backend Dockerfile restore (copy all csproj files, or copy `src/` before restore).
-2. Compose: remove the missing `init.sql` mount (or commit one), add a `pg_isready` healthcheck to `postgresql` and `depends_on: postgresql: condition: service_healthy` to `api`, pass `Jwt__Key/Issuer/Audience` from `.env`, commit `.env.example` and `.gitignore` cleanup.
-3. Apply migrations on start in Development (`Database.Migrate()`). (`UseHttpsRedirection` already removed.)
+2. Compose: remove the missing `init.sql` mount (or commit one), add a `pg_isready` healthcheck to `postgresql` and `depends_on: postgresql: condition: service_healthy` to `api`, use `Port=5432` in the in-network connection string, commit `.env.example` and `.gitignore` cleanup. (`Jwt__*` mapping done.)
+3. **Apply migrations on start** (`Database.Migrate()`), at least in Development. Needed so a fresh database works without the manual `dotnet ef database update` from problem 3. (`UseHttpsRedirection` already removed.)
 4. ~~Seed StudyStrategy and ActivityType in a migration; remove the fake admin user.~~ Done.
 5. ~~Collapse DI into one place and register all repositories and services.~~ Done.
 6. Fix the pre-existing `dotnet format` error in `MedApp.Services/Services/OptionsDayOfWeekService.cs` (line 23, whitespace); CI fails on it.
    **Done when:** a clean clone + `.env` → `docker compose up` → Swagger works, `register` then `me` returns the user.
+   Status 2026-10-09: works on the existing checkout with a manual `dotnet ef database update`; clean-clone path still blocked by steps 2–3.
 
 ### Phase 1 — Connect the frontend to auth
 1. Rewrite `authAPI` to the real contract; env var as Vite `VITE_*` or relative `/api` (+ dev proxy in `vite.config.ts`).
 2. Token storage and refresh-on-401 in one fetch wrapper; `logout` sends the refresh token.
 3. Update `AuthModal` fields; settle the teacher-role question.
+4. Auth backend fixes (problem 9), done while the frontend starts calling these endpoints:
+   - Logout: revoke only if the refresh token belongs to the caller (compare its `UserId` with the access token's `sub`).
+   - `AuthController.Me`: go through a service instead of injecting `IUserRepository`.
+   - Rate limiting on `login` / `register` (built-in `AddRateLimiter`, fixed window per IP).
    **Done when:** register/login/logout and page refresh work against the real API.
 
 ### Phase 2 — CRUD for core data (Subjects → Topics → Activities)
-1. DTOs and controllers; every query filtered by the caller's id (fixes problem 8). Validators for each DTO.
+1. DTOs and controllers with **ownership checks** (problem 8):
+   - Service methods take the caller's user id from the token, never from the request body; every query is filtered by it (`Subject.UserId`, and through `Subject` for Topics and Activities).
+   - Get/update/delete of another user's row returns 404 (don't reveal it exists).
+   - Accept and return DTOs, not EF entities (no over-posting of `UserId`, ids, navigation properties).
+   - Validators for each DTO; check that referenced lookup ids (`PlanningMethodId`, `ActivityTypeId`) exist.
+   - Apply `[Authorize(Roles = ...)]` once roles beyond `User` are used (teacher/admin endpoints), per the Phase 1 teacher-role decision.
 2. Frontend API client per resource; load on login; write through in `useStore`; stop seeding demo data on the real path.
 3. Resolve the model-gap rows as each resource lands.
    **Done when:** data survives a browser refresh and user B cannot see or change user A's data (check with a test).
@@ -94,13 +112,13 @@ Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Z
 ### Phase 5 — Quality and delivery
 1. Tests: scheduler unit tests, auth flow (register → login → refresh → replay) and ownership checks as API integration tests. Add `dotnet test` and `vite build` to CI.
 2. Frontend loading/error states and form validation.
-3. Rate limiting on auth endpoints, pinned images, production compose profile.
+3. Pinned images, production compose profile. (Auth rate limiting moved to Phase 1.)
 4. README (run, env vars, architecture, ER diagram); remove the Figma guide `.md` files.
 
 ## Open decisions (Phase 0)
 1. Apply migrations on start only in Development (compose sets `ASPNETCORE_ENVIRONMENT=Development`), or always?
 
 ## Soonest TODO
-1. Phase 0 items 1–3 and 6: Dockerfile, compose/`.env`, migrations on start, format fix.
+1. Phase 0 items 2, 3 and 6: compose/`.env.example`, migrations on start, format fix. Item 1 (Dockerfile cache) when convenient.
 2. Phase 1: switch the frontend to the real auth contract.
 3. Phase 2: first controller (Subjects) with ownership scoping.
