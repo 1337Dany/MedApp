@@ -20,8 +20,8 @@ public class RecurringOptionsRepository : IRecurringOptionsRepository
             .Include(ro => ro.Activities)
             .FirstOrDefaultAsync(ro => ro.RecurringOptionsId == id, ct);
 
-    public Task<IEnumerable<RecurringOptions>> GetAllAsync(CancellationToken ct = default) =>
-        _db.RecurringOptions.ToListAsync(ct).ContinueWith(t => (IEnumerable<RecurringOptions>)t.Result, ct);
+    public async Task<IEnumerable<RecurringOptions>> GetAllAsync(CancellationToken ct = default) =>
+        await _db.RecurringOptions.ToListAsync(ct);
 
     public Task AddAsync(RecurringOptions options, CancellationToken ct = default)
     {

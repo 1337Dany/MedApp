@@ -20,11 +20,11 @@ public class ActivityRepository : IActivityRepository
             .Include(a => a.Subject)
             .FirstOrDefaultAsync(a => a.ActivityId == id, ct);
 
-    public Task<IEnumerable<Activity>> GetBySubjectIdAsync(Guid subjectId, CancellationToken ct = default) =>
-        _db.Activities.Where(a => a.SubjectId == subjectId).ToListAsync(ct).ContinueWith(t => (IEnumerable<Activity>)t.Result, ct);
+    public async Task<IEnumerable<Activity>> GetBySubjectIdAsync(Guid subjectId, CancellationToken ct = default) =>
+        await _db.Activities.Where(a => a.SubjectId == subjectId).ToListAsync(ct);
 
-    public Task<IEnumerable<Activity>> GetAllAsync(CancellationToken ct = default) =>
-        _db.Activities.ToListAsync(ct).ContinueWith(t => (IEnumerable<Activity>)t.Result, ct);
+    public async Task<IEnumerable<Activity>> GetAllAsync(CancellationToken ct = default) =>
+        await _db.Activities.ToListAsync(ct);
 
     public Task AddAsync(Activity activity, CancellationToken ct = default)
     {

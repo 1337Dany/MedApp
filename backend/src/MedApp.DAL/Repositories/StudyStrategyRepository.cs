@@ -17,8 +17,8 @@ public class StudyStrategyRepository : IStudyStrategyRepository
     public Task<StudyStrategy?> GetByIdAsync(int id, CancellationToken ct = default) =>
         _db.StudyStrategies.FirstOrDefaultAsync(s => s.MethodId == id, ct);
 
-    public Task<IEnumerable<StudyStrategy>> GetAllAsync(CancellationToken ct = default) =>
-        _db.StudyStrategies.ToListAsync(ct).ContinueWith(t => (IEnumerable<StudyStrategy>)t.Result, ct);
+    public async Task<IEnumerable<StudyStrategy>> GetAllAsync(CancellationToken ct = default) =>
+        await _db.StudyStrategies.ToListAsync(ct);
 
     public Task AddAsync(StudyStrategy strategy, CancellationToken ct = default)
     {

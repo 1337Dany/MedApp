@@ -18,7 +18,8 @@ public class StudyStrategyConfig : IEntityTypeConfiguration<StudyStrategy>
         builder
             .HasMany(ss => ss.Subjects)
             .WithOne(s => s.PlanningMethod)
-            .HasForeignKey(s => s.PlanningMethodId);
+            .HasForeignKey(s => s.PlanningMethodId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasData(
             new StudyStrategy { MethodId = 1, MethodName = "Traffic Light" },

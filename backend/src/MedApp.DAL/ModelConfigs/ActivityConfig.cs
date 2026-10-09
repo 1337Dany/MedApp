@@ -31,7 +31,8 @@ public class ActivityConfig : IEntityTypeConfiguration<Activity>
             .HasOne(a => a.ActivityType)
             .WithMany(t => t.Activities)
             .HasForeignKey(a => a.ActivityTypeId)
-            .IsRequired();
+            .IsRequired()
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder
             .Property(a => a.Priority)

@@ -1,5 +1,6 @@
 // API configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+// Relative by default: nginx (compose) and the Vite dev proxy forward /api to the backend.
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? '/api';
 
 // Helper function to get auth token
 const getAuthToken = (): string | null => {

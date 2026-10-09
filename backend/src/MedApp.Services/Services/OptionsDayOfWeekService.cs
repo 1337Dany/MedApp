@@ -29,19 +29,8 @@ public class OptionsDayOfWeekService : IOptionsDayOfWeekService
 
     public async Task RemoveAsync(Guid recurringOptionsId, DayOfWeekEnum dayOfWeek, CancellationToken ct = default)
     {
-        var existing = await _repository.GetByRecurringOptionsIdAsync(recurringOptionsId, ct);
-        var toRemove = existing.FirstOrDefault(d => d.DayOfWeek == dayOfWeek);
-
-        if (toRemove != null)
-        {
-            var days = await _repository.GetByRecurringOptionsIdAsync(recurringOptionsId, ct);
-            foreach (var day in days.Where(d => d.DayOfWeek == dayOfWeek))
-            {
-                await _repository.DeleteAsync(recurringOptionsId, ct);
-            }
-
-            await _uow.SaveChangesAsync(ct);
-        }
+        await _repository.DeleteAsync(recurringOptionsId, dayOfWeek, ct);
+        await _uow.SaveChangesAsync(ct);
     }
 
     public async Task DeleteByRecurringOptionsIdAsync(Guid recurringOptionsId, CancellationToken ct = default)

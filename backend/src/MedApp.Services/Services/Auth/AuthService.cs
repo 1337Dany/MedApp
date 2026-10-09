@@ -1,6 +1,7 @@
 using AutoMapper;
 using MedApp.Models.Models;
 using MedApp.Services.DTOs.Auth;
+using MedApp.Services.DTOs.Users;
 using MedApp.Services.Repositories;
 using Microsoft.AspNetCore.Identity;
 
@@ -124,13 +125,14 @@ public class AuthService : IAuthService
         });
     }
 
-    public async Task<bool> LogoutAsync(LogoutRequest request, CancellationToken ct = default)
+    public async Task<bool> LogoutAsync(LogoutRequest request, Guid userId, CancellationToken ct = default)
     {
         var hash = _tokenService.HashRefreshToken(request.RefreshToken);
 
         var token = await _refreshTokens.GetByTokenHashAsync(hash, ct);
 
-        if (token is null || token.RevokedAt is not null)
+        // A caller may only revoke their own refresh token.
+        if (token is null || token.UserId != userId || token.RevokedAt is not null)
         {
             return false;
         }
@@ -138,6 +140,12 @@ public class AuthService : IAuthService
         token.RevokedAt = DateTime.UtcNow;
         await _uow.SaveChangesAsync(ct);
         return true;
+    }
+
+    public async Task<UserDto?> GetUserAsync(Guid userId, CancellationToken ct = default)
+    {
+        var user = await _users.GetByIdAsync(userId, ct);
+        return user is null ? null : _mapper.Map<UserDto>(user);
     }
 
     private async Task<TokenResponse> IssueTokensAsync(User user, CancellationToken ct)

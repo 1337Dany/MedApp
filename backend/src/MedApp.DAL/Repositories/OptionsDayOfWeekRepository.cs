@@ -1,5 +1,6 @@
 ﻿using MedApp.DAL.Context;
 using MedApp.Models.Models;
+using MedApp.Models.Models.Enums;
 using MedApp.Services.Repositories;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,11 +15,10 @@ public class OptionsDayOfWeekRepository : IOptionsDayOfWeekRepository
         _db = db;
     }
 
-    public Task<IEnumerable<OptionsDayOfWeek>> GetByRecurringOptionsIdAsync(Guid recurringOptionsId, CancellationToken ct = default) =>
-        _db.OptionsDayOfWeek
+    public async Task<IEnumerable<OptionsDayOfWeek>> GetByRecurringOptionsIdAsync(Guid recurringOptionsId, CancellationToken ct = default) =>
+        await _db.OptionsDayOfWeek
             .Where(o => o.RecurringOptionsId == recurringOptionsId)
-            .ToListAsync(ct)
-            .ContinueWith(t => (IEnumerable<OptionsDayOfWeek>)t.Result, ct);
+            .ToListAsync(ct);
 
     public Task AddAsync(OptionsDayOfWeek options, CancellationToken ct = default)
     {
@@ -33,6 +33,12 @@ public class OptionsDayOfWeekRepository : IOptionsDayOfWeekRepository
             .ToListAsync(ct);
 
         if (items.Any()) _db.OptionsDayOfWeek.RemoveRange(items);
+    }
+
+    public async Task DeleteAsync(Guid recurringOptionsId, DayOfWeekEnum dayOfWeek, CancellationToken ct = default)
+    {
+        var entity = await _db.OptionsDayOfWeek.FindAsync(new object[] { recurringOptionsId, dayOfWeek }, ct);
+        if (entity is not null) _db.OptionsDayOfWeek.Remove(entity);
     }
 }
 

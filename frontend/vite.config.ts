@@ -56,5 +56,9 @@
     server: {
       port: 3000,
       open: true,
+      // Matches the http profile in backend launchSettings.json (dotnet run).
+      proxy: {
+        '/api': 'http://localhost:8080',
+      },
     },
   });
