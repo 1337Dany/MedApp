@@ -20,7 +20,7 @@ public class OptionsDayOfWeekService : IOptionsDayOfWeekService
     {
         return await _repository.GetByRecurringOptionsIdAsync(recurringOptionsId, ct);
     }
-    
+
     public async Task AddAsync(OptionsDayOfWeek dayOfWeek, CancellationToken ct = default)
     {
         await _repository.AddAsync(dayOfWeek, ct);
