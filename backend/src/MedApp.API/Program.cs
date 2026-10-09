@@ -1,7 +1,12 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using MedApp.API;
+using MedApp.API.Controllers;
+using MedApp.DAL.Context;
 using MedApp.Services.Services.Auth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
@@ -68,7 +73,36 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
+// Requests arrive through nginx, so the client IP comes from X-Forwarded-For.
+// Limit: any caller is trusted as a proxy, so this is only safe while the API port is not
+// publicly exposed. Upgrade path: restrict KnownIPNetworks to the compose network in production.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(AuthController.RateLimitPolicy, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1) }));
+});
+
 var app = builder.Build();
+
+// Off by default so a deploy never changes a production schema unless asked to (Database__MigrateOnStartup).
+if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<MedAppDbContext>().Database.MigrateAsync();
+}
+
+app.UseForwardedHeaders();
 
 if (app.Environment.IsDevelopment())
 {
@@ -76,6 +110,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

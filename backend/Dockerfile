@@ -18,6 +18,9 @@ FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 # Placing it here allows the previous steps to be cached across architectures.
 ARG TARGETARCH
 WORKDIR /source
+COPY ["src/MedApp.Models/MedApp.Models.csproj", "src/MedApp.Models/"]
+COPY ["src/MedApp.Services/MedApp.Services.csproj", "src/MedApp.Services/"]
+COPY ["src/MedApp.DAL/MedApp.DAL.csproj", "src/MedApp.DAL/"]
 COPY ["src/MedApp.API/MedApp.API.csproj", "src/MedApp.API/"]
 
 # Build the application.

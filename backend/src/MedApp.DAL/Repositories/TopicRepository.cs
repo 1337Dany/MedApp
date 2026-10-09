@@ -17,11 +17,11 @@ public class TopicRepository : ITopicRepository
     public Task<Topic?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         _db.Topics.FirstOrDefaultAsync(t => t.TopicId == id, ct);
 
-    public Task<IEnumerable<Topic>> GetBySubjectIdAsync(Guid subjectId, CancellationToken ct = default) =>
-        _db.Topics.Where(t => t.SubjectId == subjectId).ToListAsync(ct).ContinueWith(t => (IEnumerable<Topic>)t.Result, ct);
+    public async Task<IEnumerable<Topic>> GetBySubjectIdAsync(Guid subjectId, CancellationToken ct = default) =>
+        await _db.Topics.Where(t => t.SubjectId == subjectId).ToListAsync(ct);
 
-    public Task<IEnumerable<Topic>> GetAllAsync(CancellationToken ct = default) =>
-        _db.Topics.ToListAsync(ct).ContinueWith(t => (IEnumerable<Topic>)t.Result, ct);
+    public async Task<IEnumerable<Topic>> GetAllAsync(CancellationToken ct = default) =>
+        await _db.Topics.ToListAsync(ct);
 
     public Task AddAsync(Topic topic, CancellationToken ct = default)
     {

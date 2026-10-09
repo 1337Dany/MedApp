@@ -17,8 +17,8 @@ public class ActivityTypeRepository : IActivityTypeRepository
     public Task<ActivityType?> GetByIdAsync(int id, CancellationToken ct = default) =>
         _db.ActivityTypes.FirstOrDefaultAsync(t => t.TypeId == id, ct);
 
-    public Task<IEnumerable<ActivityType>> GetAllAsync(CancellationToken ct = default) =>
-        _db.ActivityTypes.ToListAsync(ct).ContinueWith(t => (IEnumerable<ActivityType>)t.Result, ct);
+    public async Task<IEnumerable<ActivityType>> GetAllAsync(CancellationToken ct = default) =>
+        await _db.ActivityTypes.ToListAsync(ct);
 
     public Task AddAsync(ActivityType type, CancellationToken ct = default)
     {
