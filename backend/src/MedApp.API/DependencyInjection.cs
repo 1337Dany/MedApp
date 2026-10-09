@@ -5,6 +5,7 @@ using MedApp.Models.Models;
 using MedApp.Services;
 using MedApp.Services.Mapping;
 using MedApp.Services.Repositories;
+using MedApp.Services.Services;
 using MedApp.Services.Services.Auth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +20,7 @@ public static class DependencyInjection
         services
             .AddDatabaseAndContext(configuration)
             .AddRepositories()
+            .AddDomainServices()
             .AddJwtConfiguration(configuration)
             .AddAuthServices();
 
@@ -49,7 +51,27 @@ public static class DependencyInjection
     {
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IActivityRepository, ActivityRepository>();
+        services.AddScoped<IActivityTypeRepository, ActivityTypeRepository>();
+        services.AddScoped<IStudyStrategyRepository, StudyStrategyRepository>();
+        services.AddScoped<IRecurringOptionsRepository, RecurringOptionsRepository>();
+        services.AddScoped<IOptionsDayOfWeekRepository, OptionsDayOfWeekRepository>();
+        services.AddScoped<ITopicRepository, TopicRepository>();
+        services.AddScoped<ISubjectRepository, SubjectRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+        return services;
+    }
+
+    private static IServiceCollection AddDomainServices(this IServiceCollection services)
+    {
+        services.AddScoped<ISubjectService, SubjectService>();
+        services.AddScoped<ITopicService, TopicService>();
+        services.AddScoped<IActivityService, ActivityService>();
+        services.AddScoped<IActivityTypeService, ActivityTypeService>();
+        services.AddScoped<IStudyStrategyService, StudyStrategyService>();
+        services.AddScoped<IRecurringOptionsService, RecurringOptionsService>();
+        services.AddScoped<IOptionsDayOfWeekService, OptionsDayOfWeekService>();
 
         return services;
     }

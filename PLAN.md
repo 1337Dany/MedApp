@@ -25,8 +25,8 @@ Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Z
 - **No tests at all**, and CI only checks formatting.
 
 ### Problems found (fix before building on top)
-1. **Services are registered in the wrong place.** `Program.cs` uses `MedApp.API.DependencyInjection.AddMedAppInfrastructure`, which registers only the user and refresh-token repositories and the auth services. `ISubjectService`, `ITopicService`, `IActivityService` and the other repositories are **never registered**. Any controller using them would fail at runtime.
-2. **Dead duplicate DI code.** `MedApp.DAL.AddMedAppDal` and `MedApp.Services.AddMedAppServices` are never called, and both duplicate the JWT-options validation that the API's DI also does. `Program.cs` repeats the key check by hand, so there are four copies. `AddMedAppDal` also maps `UserRole` as a Postgres enum (`user_role`), while the migration creates the column as `integer` and the API path does not map it. Keep one DI entry point and delete the rest. The API is the natural place for it, since DAL depends on Services (it implements the interfaces defined there).
+1. ~~**Services are registered in the wrong place.**~~ Fixed on `feature/fixes`: `MedApp.API.DependencyInjection` now registers all repositories and domain services.
+2. ~~**Dead duplicate DI code.**~~ Fixed on `feature/fixes`: `AddMedAppDal` and `AddMedAppServices` deleted (with them the stray `user_role` enum mapping; `Role` stays `integer`). Two JWT checks remain on the live path, both needed for now: `Program.cs` reads the key before `Build()` for JwtBearer, and DI `ValidateOnStart` also checks Issuer/Audience.
 3. **Compose is not runnable from a clean clone.**
    - Mounts `./postgres/init.sql` and `./postgres/data`. Neither exists in the repo and both are gitignored; Docker will create a directory in place of the missing file. The old `infra/postgres/*` paths were dropped, and `.gitignore` lists both old and new.
    - The `api` service gets no `Jwt__Key`, `Jwt__Issuer`, `Jwt__Audience`, so the container will exit on start (`appsettings.*` is gitignored too).
@@ -34,9 +34,9 @@ Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Z
    - `.env` variable names changed (`POSTGRES_DB` → `POSTGRES_DATABASE`); there is no `.env.example` to document it. Existing local `.env` files still have the old names (`POSTGRES_DB`, `POSTGRES_ROOT_PASSWORD`) and lack `POSTGRES_DATABASE`, `POSTGRES_HOST`, `API_HTTP_PORT`, `ASPNETCORE_ENVIRONMENT` and `Jwt__*`, so compose doesn't run on an existing checkout either.
    - No `appsettings*.json` exists in `MedApp.API` (gitignored), so local `dotnet run` depends on user-secrets or env vars, and nothing documents which.
 4. **Backend Dockerfile restore step** copies only `MedApp.API.csproj` before `dotnet restore`. The API now references DAL and Services (which reference Models), so restore either fails or the layer cache is wasted. Copy all four `.csproj` files before `restore`. Image not built yet, so unconfirmed.
-5. **`UseHttpsRedirection()`** with an HTTP-only container (port 5000).
-6. **Lookup data (StudyStrategy, ActivityType) is not seeded by any migration.** Creating a Subject or Activity violates its FK on a fresh database. `infra/scripts/Diploma_DB_seed.sql` is outdated (no `Role`, no `RefreshTokens`), but its lookup values are usable: StudyStrategy 1–3 (Traffic Light, Active Recall, Manual), ActivityType 1–9 (Studying … One-Time Event). Seed them with `HasData` and fixed ids. The ids are identity columns, so the sequences won't advance past the seeded ids. That's fine while the tables stay read-only.
-7. **Seeded dev user** (`sisoev.a@outlook.com`, hash `somehash`) is created by `NewMigration` (`20260314185840`) and promoted to `Admin` by `AddAuthAndRoles`. It can't log in (not a valid Identity hash), but it is a real admin row in every database. Because of the unique email index, nobody can register with that email while the row exists. The model snapshot has no `HasData` for it, so removal needs a new migration with `DeleteData`.
+5. ~~**`UseHttpsRedirection()`** with an HTTP-only container.~~ Fixed on `feature/fixes`: removed; TLS belongs at the proxy.
+6. ~~**Lookup data not seeded.**~~ Fixed on `feature/fixes`: `HasData` in `StudyStrategyConfig` (1–3) and `ActivityTypeConfig` (1–9), migration `SeedLookupsRemoveDevUser` (Npgsql also resets the identity sequences past the seeded ids). `infra/scripts/Diploma_DB_seed.sql` is still outdated (no `Role`, no `RefreshTokens`, old table names).
+7. ~~**Seeded dev user.**~~ Fixed on `feature/fixes`: the same migration deletes the placeholder admin row inserted by `NewMigration`; `Down` re-inserts it. Not yet applied to a real database.
 8. **No ownership checks in the service layer yet.** `SubjectService.GetByIdAsync`, `UpdateAsync`, `DeleteAsync` take only an id, and services return/accept EF entities rather than DTOs. When controllers are added, every call must be scoped to the caller's user id, or one user can read or delete another's data. Entities in `UpdateAsync` also invite over-posting; use DTOs.
 9. **`AuthController` details**:
    - Logout is `[Authorize]` but doesn't check that the refresh token belongs to the caller.
@@ -64,9 +64,10 @@ Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Z
 ### Phase 0 — Make it run from a clean clone
 1. Fix backend Dockerfile restore (copy all csproj files, or copy `src/` before restore).
 2. Compose: remove the missing `init.sql` mount (or commit one), add a `pg_isready` healthcheck to `postgresql` and `depends_on: postgresql: condition: service_healthy` to `api`, pass `Jwt__Key/Issuer/Audience` from `.env`, commit `.env.example` and `.gitignore` cleanup.
-3. Apply migrations on start in Development (`Database.Migrate()`), and drop `UseHttpsRedirection` in the container.
-4. Seed StudyStrategy and ActivityType in a migration; remove the fake admin user.
-5. Collapse DI into one place (API's, extended) and delete `AddMedAppDal` / `AddMedAppServices`, or the reverse; register all repositories and services.
+3. Apply migrations on start in Development (`Database.Migrate()`). (`UseHttpsRedirection` already removed.)
+4. ~~Seed StudyStrategy and ActivityType in a migration; remove the fake admin user.~~ Done.
+5. ~~Collapse DI into one place and register all repositories and services.~~ Done.
+6. Fix the pre-existing `dotnet format` error in `MedApp.Services/Services/OptionsDayOfWeekService.cs` (line 23, whitespace); CI fails on it.
    **Done when:** a clean clone + `.env` → `docker compose up` → Swagger works, `register` then `me` returns the user.
 
 ### Phase 1 — Connect the frontend to auth
@@ -97,11 +98,9 @@ Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Z
 4. README (run, env vars, architecture, ER diagram); remove the Figma guide `.md` files.
 
 ## Open decisions (Phase 0)
-1. Remove the fake admin user via a new migration?
-2. Apply migrations on start only in Development (compose sets `ASPNETCORE_ENVIRONMENT=Development`), or always?
-3. `UseHttpsRedirection`: remove entirely, or keep for non-Development only (nginx in front speaks plain HTTP)?
+1. Apply migrations on start only in Development (compose sets `ASPNETCORE_ENVIRONMENT=Development`), or always?
 
 ## Soonest TODO
-1. Phase 0 items 1–5: Dockerfile, compose/`.env`, migrations on start, lookup seed, single DI registration.
+1. Phase 0 items 1–3 and 6: Dockerfile, compose/`.env`, migrations on start, format fix.
 2. Phase 1: switch the frontend to the real auth contract.
 3. Phase 2: first controller (Subjects) with ownership scoping.
