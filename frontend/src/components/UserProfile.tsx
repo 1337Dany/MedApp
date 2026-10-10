@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { User, LogOut, Settings, ChevronDown } from 'lucide-react';
+import { User, LogOut, ChevronDown } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
+import { ProfileModal } from './ProfileModal';
 
 export function UserProfile() {
   const { user, logout } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   if (!user) return null;
 
@@ -42,13 +44,15 @@ export function UserProfile() {
             </div>
 
             <div className="py-2">
-              <button className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-50 text-left">
+              <button
+                onClick={() => {
+                  setIsProfileOpen(true);
+                  setIsOpen(false);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-50 text-left"
+              >
                 <User className="w-4 h-4 text-gray-600" />
                 <span className="text-sm text-gray-700">Profile Settings</span>
-              </button>
-              <button className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-50 text-left">
-                <Settings className="w-4 h-4 text-gray-600" />
-                <span className="text-sm text-gray-700">Preferences</span>
               </button>
             </div>
 
@@ -64,16 +68,11 @@ export function UserProfile() {
                 <span className="text-sm text-red-600">Sign Out</span>
               </button>
             </div>
-
-            {/* Backend Integration Note */}
-            <div className="px-4 py-2 border-t border-gray-200 mt-2">
-              <p className="text-xs text-gray-500">
-                Backend integration ready in <code className="text-[10px] bg-gray-100 px-1 rounded">useAuthStore.ts</code>
-              </p>
-            </div>
           </div>
         </>
       )}
+
+      {isProfileOpen && <ProfileModal onClose={() => setIsProfileOpen(false)} />}
     </div>
   );
 }

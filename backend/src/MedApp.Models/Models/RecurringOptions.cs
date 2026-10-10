@@ -8,6 +8,9 @@ public class RecurringOptions
 
     public Frequency Frequency { get; set; }
 
+    // Last day (inclusive) of the series; null repeats indefinitely.
+    public DateOnly? Until { get; set; }
+
     public ICollection<OptionsDayOfWeek> DaysOfWeek { get; set; }
         = new List<OptionsDayOfWeek>();
 

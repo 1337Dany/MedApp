@@ -6,7 +6,7 @@ import { SubjectModal } from './SubjectModal';
 import { TopicModal } from './TopicModal';
 
 export function SubjectsView() {
-  const { subjects, topics, updateTopic, deleteTopic, deleteSubject } = useStore();
+  const { subjects, topics, deleteTopic, deleteSubject } = useStore();
   const [expandedSubjects, setExpandedSubjects] = useState<Set<string>>(new Set());
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
@@ -32,8 +32,8 @@ export function SubjectsView() {
 
   const handleDeleteSubject = (subjectId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this subject? All topics will also be deleted.')) {
-      deleteSubject(subjectId);
+    if (confirm('Are you sure you want to delete this subject? All its topics and activities will also be deleted.')) {
+      deleteSubject(subjectId).catch((err) => alert(err instanceof Error ? err.message : 'Could not delete the subject.'));
     }
   };
 
@@ -54,7 +54,7 @@ export function SubjectsView() {
   const handleDeleteTopic = (topicId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm('Are you sure you want to delete this topic?')) {
-      deleteTopic(topicId);
+      deleteTopic(topicId).catch((err) => alert(err instanceof Error ? err.message : 'Could not delete the topic.'));
     }
   };
 
@@ -219,9 +219,11 @@ export function SubjectsView() {
                                 {topic.notes && (
                                   <p className="text-xs text-gray-600 mt-1">{topic.notes}</p>
                                 )}
-                                {topic.lastStudied && (
+                                {(topic.lastStudied || topic.nextReview) && (
                                   <p className="text-xs text-gray-500 mt-1">
-                                    Last studied: {new Date(topic.lastStudied).toLocaleDateString()}
+                                    {topic.lastStudied && `Last studied: ${new Date(topic.lastStudied).toLocaleDateString()}`}
+                                    {topic.lastStudied && topic.nextReview && ' · '}
+                                    {topic.nextReview && `Next review: ${new Date(topic.nextReview).toLocaleDateString()}`}
                                   </p>
                                 )}
                               </div>

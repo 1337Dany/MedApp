@@ -1,4 +1,5 @@
-﻿using MedApp.Models.Models;
+﻿using AutoMapper;
+using MedApp.Services.DTOs.Lookups;
 using MedApp.Services.Repositories;
 
 namespace MedApp.Services.Services;
@@ -6,41 +7,17 @@ namespace MedApp.Services.Services;
 public class StudyStrategyService : IStudyStrategyService
 {
     private readonly IStudyStrategyRepository _repository;
-    private readonly IUnitOfWork _uow;
+    private readonly IMapper _mapper;
 
-    public StudyStrategyService(IStudyStrategyRepository repository, IUnitOfWork uow)
+    public StudyStrategyService(IStudyStrategyRepository repository, IMapper mapper)
     {
         _repository = repository;
-        _uow = uow;
+        _mapper = mapper;
     }
 
-    public async Task<StudyStrategy?> GetByIdAsync(int methodId, CancellationToken ct = default)
+    public async Task<IEnumerable<LookupDto>> GetAllAsync(CancellationToken ct = default)
     {
-        return await _repository.GetByIdAsync(methodId, ct);
-    }
-
-    public async Task<IEnumerable<StudyStrategy>> GetAllAsync(CancellationToken ct = default)
-    {
-        return await _repository.GetAllAsync(ct);
-    }
-
-    public async Task<StudyStrategy> AddAsync(StudyStrategy strategy, CancellationToken ct = default)
-    {
-        await _repository.AddAsync(strategy, ct);
-        await _uow.SaveChangesAsync(ct);
-        return strategy;
-    }
-
-    public async Task UpdateAsync(StudyStrategy strategy, CancellationToken ct = default)
-    {
-        await _repository.UpdateAsync(strategy, ct);
-        await _uow.SaveChangesAsync(ct);
-    }
-
-    public async Task DeleteAsync(int methodId, CancellationToken ct = default)
-    {
-        await _repository.DeleteAsync(methodId, ct);
-        await _uow.SaveChangesAsync(ct);
+        var strategies = await _repository.GetAllAsync(ct);
+        return _mapper.Map<IEnumerable<LookupDto>>(strategies);
     }
 }
-

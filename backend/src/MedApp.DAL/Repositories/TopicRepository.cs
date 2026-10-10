@@ -14,14 +14,20 @@ public class TopicRepository : ITopicRepository
         _db = db;
     }
 
-    public Task<Topic?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
-        _db.Topics.FirstOrDefaultAsync(t => t.TopicId == id, ct);
+    public Task<Topic?> GetByIdAsync(Guid id, Guid userId, CancellationToken ct = default) =>
+        _db.Topics.FirstOrDefaultAsync(t => t.TopicId == id && t.Subject.UserId == userId, ct);
 
-    public async Task<IEnumerable<Topic>> GetBySubjectIdAsync(Guid subjectId, CancellationToken ct = default) =>
-        await _db.Topics.Where(t => t.SubjectId == subjectId).ToListAsync(ct);
+    public async Task<IEnumerable<Topic>> GetByUserIdAsync(Guid userId, Guid? subjectId = null, CancellationToken ct = default) =>
+        await _db.Topics
+            .Where(t => t.Subject.UserId == userId && (subjectId == null || t.SubjectId == subjectId))
+            .OrderBy(t => t.SubjectId)
+            .ThenBy(t => t.Order)
+            .ToListAsync(ct);
 
-    public async Task<IEnumerable<Topic>> GetAllAsync(CancellationToken ct = default) =>
-        await _db.Topics.ToListAsync(ct);
+    public Task<int?> GetMaxOrderAsync(Guid subjectId, CancellationToken ct = default) =>
+        _db.Topics
+            .Where(t => t.SubjectId == subjectId)
+            .MaxAsync(t => (int?)t.Order, ct);
 
     public Task AddAsync(Topic topic, CancellationToken ct = default)
     {
@@ -29,16 +35,9 @@ public class TopicRepository : ITopicRepository
         return Task.CompletedTask;
     }
 
-    public Task UpdateAsync(Topic topic, CancellationToken ct = default)
+    public Task DeleteAsync(Topic topic, CancellationToken ct = default)
     {
-        _db.Topics.Update(topic);
+        _db.Topics.Remove(topic);
         return Task.CompletedTask;
     }
-
-    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
-    {
-        var entity = await _db.Topics.FindAsync(new object[] { id }, ct);
-        if (entity is not null) _db.Topics.Remove(entity);
-    }
 }
-

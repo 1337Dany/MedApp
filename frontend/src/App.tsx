@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Calendar, Book, Activity as ActivityIcon, BarChart3, Settings, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Calendar, Book, Activity as ActivityIcon, BarChart3, Users, UserCog } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { CalendarView } from './components/CalendarView';
 import { SubjectsView } from './components/SubjectsView';
@@ -9,33 +9,79 @@ import { TeacherDashboard } from './components/TeacherDashboard';
 import { InitialSetup } from './components/InitialSetup';
 import { AuthModal } from './components/AuthModal';
 import { UserProfile } from './components/UserProfile';
+import { UsersView } from './components/UsersView';
 import { useStore } from './store/useStore';
 import { useAuthStore } from './store/useAuthStore';
+import { isStaff } from './types/auth';
 
-type View = 'dashboard' | 'calendar' | 'subjects' | 'activities' | 'analytics' | 'teacher';
+const setupKey = (userId: string) => `medapp.setupDone.${userId}`;
+const isSetupDone = (userId: string) => localStorage.getItem(setupKey(userId)) === '1';
+const markSetupDone = (userId: string) => localStorage.setItem(setupKey(userId), '1');
+
+type View = 'dashboard' | 'calendar' | 'subjects' | 'activities' | 'analytics' | 'teacher' | 'users';
 
 export default function App() {
-  const { subjects } = useStore();
-  const { isAuthenticated, user } = useAuthStore();
-  const [currentView, setCurrentView] = useState<View>(user?.role === 'teacher' ? 'teacher' : 'dashboard');
+  const { subjects, activities, isLoaded, loadError, loadAll, reset } = useStore();
+  const { isAuthenticated, isLoading, user } = useAuthStore();
+  const staff = isStaff(user);
+  const [currentView, setCurrentView] = useState<View>(staff ? 'teacher' : 'dashboard');
   const [setupComplete, setSetupComplete] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
 
-  // Show auth modal if not authenticated
+  // Whenever a different user signs in (or out): drop the previous user's data, land on the
+  // right start page and load the new user's data from the API.
+  useEffect(() => {
+    reset();
+    setCurrentView(staff ? 'teacher' : 'dashboard');
+    setSetupComplete(user ? isSetupDone(user.id) : false);
+    if (user && !staff) loadAll();
+  }, [user?.id, staff]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-500">Loading...</p>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
-    return <AuthModal onClose={() => setShowAuthModal(false)} />;
+    return <AuthModal />;
   }
 
-  // Show initial setup if no subjects exist and setup not completed (only for students)
-  if (user?.role === 'student' && subjects.length === 0 && !setupComplete) {
-    return <InitialSetup onComplete={() => setSetupComplete(true)} />;
+  if (!staff && !isLoaded) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-gray-50">
+        {loadError ? (
+          <>
+            <p className="text-red-700">{loadError}</p>
+            <button onClick={() => loadAll()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              Try again
+            </button>
+          </>
+        ) : (
+          <p className="text-gray-500">Loading your data...</p>
+        )}
+      </div>
+    );
   }
 
-  // Navigation items based on role
-  const navigation = user?.role === 'teacher' 
+  // First visit of a student with an empty account: offer demo data (shown until dismissed once).
+  if (!staff && user && subjects.length === 0 && activities.length === 0 && !setupComplete) {
+    return (
+      <InitialSetup
+        onComplete={() => {
+          markSetupDone(user.id);
+          setSetupComplete(true);
+        }}
+      />
+    );
+  }
+
+  // Navigation items based on role. Staff have no study data of their own.
+  const navigation = staff
     ? [
         { id: 'teacher' as const, label: 'Class Overview', icon: Users },
-        { id: 'analytics' as const, label: 'Analytics', icon: BarChart3 },
+        ...(user?.role === 'admin' ? [{ id: 'users' as const, label: 'Users', icon: UserCog }] : []),
       ]
     : [
         { id: 'dashboard' as const, label: 'Dashboard', icon: BarChart3 },
@@ -89,12 +135,13 @@ export default function App() {
 
         {/* Main Content */}
         <main className="flex-1 p-6">
-          {user?.role === 'teacher' && currentView === 'teacher' && <TeacherDashboard />}
-          {user?.role === 'student' && currentView === 'dashboard' && <Dashboard />}
-          {currentView === 'calendar' && <CalendarView />}
-          {currentView === 'subjects' && <SubjectsView />}
-          {currentView === 'activities' && <ActivitiesView />}
-          {currentView === 'analytics' && <AnalyticsView />}
+          {staff && currentView === 'teacher' && <TeacherDashboard />}
+          {user?.role === 'admin' && currentView === 'users' && <UsersView />}
+          {!staff && currentView === 'dashboard' && <Dashboard onViewCalendar={() => setCurrentView('calendar')} />}
+          {!staff && currentView === 'calendar' && <CalendarView />}
+          {!staff && currentView === 'subjects' && <SubjectsView />}
+          {!staff && currentView === 'activities' && <ActivitiesView />}
+          {!staff && currentView === 'analytics' && <AnalyticsView />}
         </main>
       </div>
     </div>

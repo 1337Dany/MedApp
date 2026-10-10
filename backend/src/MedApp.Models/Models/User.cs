@@ -18,6 +18,10 @@ public class User
 
     public UserRole Role { get; set; } = UserRole.User;
 
+    // IANA time zone of the student's browser, used to plan in local time. Null until first planning.
+    public string? TimeZone { get; set; }
+
     public ICollection<Subject> Subjects { get; set; } = new List<Subject>();
+    public ICollection<Activity> Activities { get; set; } = new List<Activity>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
 }

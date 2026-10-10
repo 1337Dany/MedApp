@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using MedApp.API;
 using MedApp.API.Controllers;
@@ -49,7 +51,10 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
-builder.Services.AddControllers();
+// Enums travel as camelCase strings ("partiallyDone", "teacher") instead of numbers.
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -74,15 +79,24 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // Requests arrive through nginx, so the client IP comes from X-Forwarded-For.
-// Limit: any caller is trusted as a proxy, so this is only safe while the API port is not
-// publicly exposed. Upgrade path: restrict KnownIPNetworks to the compose network in production.
+// ForwardedHeaders:KnownNetworks (CIDRs) lists the networks trusted as proxies; the production compose file
+// sets it to the compose network. Without it any caller is trusted, which is only safe while the API port
+// is not publicly exposed (local development).
+var trustedProxyNetworks = builder.Configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>() ?? [];
+
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
     options.ForwardLimit = 1;
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
+    foreach (var network in trustedProxyNetworks)
+    {
+        options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
+    }
 });
+
+var authPermitLimit = builder.Configuration.GetValue("RateLimiting:AuthPermitLimit", 5);
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -90,7 +104,7 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy(AuthController.RateLimitPolicy, context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1) }));
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = authPermitLimit, Window = TimeSpan.FromMinutes(1) }));
 });
 
 var app = builder.Build();
@@ -116,3 +130,6 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+// Exposed for WebApplicationFactory in MedApp.API.Tests.
+public partial class Program;

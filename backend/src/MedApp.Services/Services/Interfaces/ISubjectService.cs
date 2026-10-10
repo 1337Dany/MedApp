@@ -1,14 +1,13 @@
-﻿using MedApp.Models.Models;
+﻿using MedApp.Services.DTOs.Subjects;
 
 namespace MedApp.Services.Services;
 
+// Every method is scoped to the caller (userId from the token). Null / false means "not found or not yours".
 public interface ISubjectService
 {
-    Task<Subject?> GetByIdAsync(Guid subjectId, CancellationToken ct = default);
-    Task<IEnumerable<Subject>> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
-    Task<IEnumerable<Subject>> GetAllAsync(CancellationToken ct = default);
-    Task<Subject> AddAsync(Subject subject, CancellationToken ct = default);
-    Task UpdateAsync(Subject subject, CancellationToken ct = default);
-    Task DeleteAsync(Guid subjectId, CancellationToken ct = default);
+    Task<IEnumerable<SubjectDto>> GetAllAsync(Guid userId, CancellationToken ct = default);
+    Task<SubjectDto?> GetByIdAsync(Guid subjectId, Guid userId, CancellationToken ct = default);
+    Task<SubjectDto> CreateAsync(Guid userId, SubjectRequest request, CancellationToken ct = default);
+    Task<SubjectDto?> UpdateAsync(Guid subjectId, Guid userId, SubjectRequest request, CancellationToken ct = default);
+    Task<bool> DeleteAsync(Guid subjectId, Guid userId, CancellationToken ct = default);
 }
-

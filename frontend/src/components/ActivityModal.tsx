@@ -1,7 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Activity, ActivityType, ActivityStatus } from '../types';
+import { parseDateOnly, toDateInputValue, toTimeInputValue } from '../utils/dates';
+
+// Activity types that can belong to a subject.
+const SUBJECT_TYPES: ActivityType[] = ['studying', 'class'];
 
 interface ActivityModalProps {
   activity: Activity | null;
@@ -11,36 +15,51 @@ interface ActivityModalProps {
 }
 
 export function ActivityModal({ activity, initialDate, initialHour, onClose }: ActivityModalProps) {
-  const { addActivity, updateActivity, deleteActivity, subjects } = useStore();
+  const { addActivity, updateActivity, deleteActivity, subjects, topics } = useStore();
 
   const [formData, setFormData] = useState({
     title: activity?.title || '',
     type: activity?.type || ('studying' as ActivityType),
-    date: activity?.startTime 
-      ? new Date(activity.startTime).toISOString().split('T')[0]
-      : initialDate?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
+    date: toDateInputValue(activity?.startTime ? new Date(activity.startTime) : initialDate ?? new Date()),
     time: activity?.startTime
-      ? new Date(activity.startTime).toTimeString().slice(0, 5)
+      ? toTimeInputValue(new Date(activity.startTime))
       : initialHour !== undefined
       ? `${initialHour.toString().padStart(2, '0')}:00`
       : '09:00',
     duration: activity?.duration || 60,
     recurring: activity?.recurring || false,
-    recurrenceFrequency: activity?.recurrencePattern?.frequency || 'weekly',
+    recurrenceFrequency: (activity?.recurrencePattern?.frequency || 'weekly') as 'daily' | 'weekly',
     recurrenceDays: activity?.recurrencePattern?.daysOfWeek || [],
+    recurrenceUntil: activity?.recurrencePattern?.until ? toDateInputValue(new Date(activity.recurrencePattern.until)) : '',
     negotiable: activity?.negotiable ?? true,
     priority: activity?.priority || 3,
     status: activity?.status || ('scheduled' as ActivityStatus),
     subjectId: activity?.subjectId || '',
+    topicId: activity?.topicId || '',
     notes: activity?.notes || '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
+  const canHaveSubject = SUBJECT_TYPES.includes(formData.type);
+  const subjectTopics = topics
+    .filter((t) => t.subjectId === formData.subjectId)
+    .sort((a, b) => a.order - b.order);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    // Built from local date and time parts, so the activity lands where the user clicked.
     const startTime = new Date(`${formData.date}T${formData.time}`);
 
-    const activityData: Partial<Activity> = {
+    if (formData.recurring && formData.recurrenceFrequency === 'weekly' && formData.recurrenceDays.length === 0) {
+      setError('Pick at least one day for a weekly activity.');
+      return;
+    }
+
+    const activityData: Omit<Activity, 'id'> = {
       title: formData.title,
       type: formData.type,
       startTime,
@@ -50,31 +69,40 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
         ? {
             frequency: formData.recurrenceFrequency as 'daily' | 'weekly',
             daysOfWeek: formData.recurrenceDays,
+            until: formData.recurrenceUntil ? parseDateOnly(formData.recurrenceUntil) : undefined,
           }
         : undefined,
       negotiable: formData.negotiable,
       priority: formData.priority,
       status: formData.status,
-      subjectId: formData.subjectId || undefined,
+      subjectId: canHaveSubject && formData.subjectId ? formData.subjectId : undefined,
+      topicId: canHaveSubject && formData.subjectId && formData.topicId ? formData.topicId : undefined,
       notes: formData.notes || undefined,
     };
 
-    if (activity) {
-      updateActivity(activity.id, activityData);
-    } else {
-      addActivity({
-        id: crypto.randomUUID(),
-        ...activityData,
-      } as Activity);
+    setIsSaving(true);
+    try {
+      if (activity) {
+        await updateActivity(activity.id, activityData);
+      } else {
+        await addActivity(activityData);
+      }
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the activity.');
+    } finally {
+      setIsSaving(false);
     }
-
-    onClose();
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (activity && confirm('Are you sure you want to delete this activity?')) {
-      deleteActivity(activity.id);
-      onClose();
+      try {
+        await deleteActivity(activity.id);
+        onClose();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not delete the activity.');
+      }
     }
   };
 
@@ -103,6 +131,10 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <p className="p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</p>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Title *
@@ -110,6 +142,7 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
             <input
               type="text"
               required
+              maxLength={100}
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -156,23 +189,45 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
             </div>
           </div>
 
-          {formData.type === 'studying' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Subject
-              </label>
-              <select
-                value={formData.subjectId}
-                onChange={(e) => setFormData({ ...formData, subjectId: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">No subject</option>
-                {subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.title}
-                  </option>
-                ))}
-              </select>
+          {canHaveSubject && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subject
+                </label>
+                <select
+                  value={formData.subjectId}
+                  onChange={(e) => setFormData({ ...formData, subjectId: e.target.value, topicId: '' })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">No subject</option>
+                  {subjects.map((subject) => (
+                    <option key={subject.id} value={subject.id}>
+                      {subject.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {formData.type === 'studying' && formData.subjectId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Topic
+                  </label>
+                  <select
+                    value={formData.topicId}
+                    onChange={(e) => setFormData({ ...formData, topicId: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Whole subject</option>
+                    {subjectTopics.map((topic) => (
+                      <option key={topic.id} value={topic.id}>
+                        {topic.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           )}
 
@@ -212,6 +267,7 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
               type="number"
               required
               min="15"
+              max="1440"
               step="15"
               value={formData.duration}
               onChange={(e) => setFormData({ ...formData, duration: parseInt(e.target.value) })}
@@ -238,7 +294,7 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
                   </label>
                   <select
                     value={formData.recurrenceFrequency}
-                    onChange={(e) => setFormData({ ...formData, recurrenceFrequency: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, recurrenceFrequency: e.target.value as 'daily' | 'weekly' })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="daily">Daily</option>
@@ -269,6 +325,19 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
                     </div>
                   </div>
                 )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Repeat until (optional)
+                  </label>
+                  <input
+                    type="date"
+                    min={formData.date}
+                    value={formData.recurrenceUntil}
+                    onChange={(e) => setFormData({ ...formData, recurrenceUntil: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -290,6 +359,7 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
               </label>
               <input
                 type="number"
+                required
                 min="1"
                 max="5"
                 value={formData.priority}
@@ -315,9 +385,10 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
           <div className="flex gap-3 pt-4">
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              disabled={isSaving}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
-              {activity ? 'Update' : 'Create'}
+              {isSaving ? 'Saving...' : activity ? 'Update' : 'Create'}
             </button>
             {activity && (
               <button

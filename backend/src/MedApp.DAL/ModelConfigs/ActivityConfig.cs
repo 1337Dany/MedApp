@@ -17,10 +17,29 @@ public class ActivityConfig : IEntityTypeConfiguration<Activity>
             .HasDefaultValueSql("gen_random_uuid()");
 
         builder
+            .HasOne(a => a.User)
+            .WithMany(u => u.Activities)
+            .HasForeignKey(a => a.UserId)
+            .IsRequired()
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Deleting a subject deletes its activities (the frontend does the same).
+        builder
             .HasOne(a => a.Subject)
             .WithMany(s => s.Activities)
             .HasForeignKey(a => a.SubjectId)
-            .IsRequired();
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder
+            .HasOne(a => a.Topic)
+            .WithMany()
+            .HasForeignKey(a => a.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder
+            .HasIndex(a => new { a.UserId, a.StartTime });
 
         builder
             .Property(a => a.Title)
@@ -54,10 +73,16 @@ public class ActivityConfig : IEntityTypeConfiguration<Activity>
             .HasOne(a => a.RecurringOptions)
             .WithMany(r => r.Activities)
             .HasForeignKey(a => a.RecurringOptionsId)
-            .IsRequired(false);
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder
             .Property(a => a.IsNegotiable)
+            .IsRequired();
+
+        builder
+            .Property(a => a.IsAutoPlanned)
+            .HasDefaultValue(false)
             .IsRequired();
 
         builder
