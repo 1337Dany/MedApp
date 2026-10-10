@@ -10,7 +10,7 @@ interface TopicModalProps {
 }
 
 export function TopicModal({ topic, subjectId, onClose }: TopicModalProps) {
-  const { addTopic, updateTopic, topics } = useStore();
+  const { addTopic, updateTopic } = useStore();
 
   const [formData, setFormData] = useState({
     title: topic?.title || '',
@@ -18,37 +18,38 @@ export function TopicModal({ topic, subjectId, onClose }: TopicModalProps) {
     notes: topic?.notes || '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
 
     if (!subjectId && !topic) {
-      alert('Subject ID is required');
+      setError('Subject is required');
       return;
     }
 
     const topicData: Partial<Topic> = {
-      title: formData.title,
+      title: formData.title.trim(),
       knowledge: formData.knowledge,
       notes: formData.notes || undefined,
     };
 
-    if (topic) {
-      updateTopic(topic.id, topicData);
-    } else {
-      const existingTopics = topics.filter((t) => t.subjectId === subjectId);
-      const maxOrder = existingTopics.length > 0
-        ? Math.max(...existingTopics.map((t) => t.order))
-        : -1;
-
-      addTopic({
-        id: crypto.randomUUID(),
-        subjectId: subjectId!,
-        order: maxOrder + 1,
-        ...topicData,
-      } as Topic);
+    setIsSaving(true);
+    try {
+      if (topic) {
+        await updateTopic(topic.id, topicData);
+      } else {
+        // The API appends the topic at the end of the subject's list.
+        await addTopic(subjectId!, topicData);
+      }
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the topic.');
+    } finally {
+      setIsSaving(false);
     }
-
-    onClose();
   };
 
   return (
@@ -64,6 +65,10 @@ export function TopicModal({ topic, subjectId, onClose }: TopicModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <p className="p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</p>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Topic Title *
@@ -71,6 +76,7 @@ export function TopicModal({ topic, subjectId, onClose }: TopicModalProps) {
             <input
               type="text"
               required
+              maxLength={100}
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -141,6 +147,7 @@ export function TopicModal({ topic, subjectId, onClose }: TopicModalProps) {
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               rows={4}
+              maxLength={1000}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Add any notes about this topic..."
             />
@@ -149,9 +156,10 @@ export function TopicModal({ topic, subjectId, onClose }: TopicModalProps) {
           <div className="flex gap-3 pt-4">
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              disabled={isSaving}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
-              {topic ? 'Update' : 'Create'}
+              {isSaving ? 'Saving...' : topic ? 'Update' : 'Create'}
             </button>
             <button
               type="button"

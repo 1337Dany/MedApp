@@ -18,7 +18,7 @@ export interface Activity {
   recurrencePattern?: {
     frequency: 'daily' | 'weekly';
     daysOfWeek?: number[]; // 0-6, Sunday = 0
-    until?: Date;
+    until?: Date; // last day of the series (inclusive)
   };
   negotiable: boolean;
   priority: number; // 1-5
@@ -26,13 +26,13 @@ export interface Activity {
   subjectId?: string;
   topicId?: string;
   notes?: string;
+  autoPlanned?: boolean; // created by the study planner (read-only)
 }
 
 export interface Topic {
   id: string;
   title: string;
   subjectId: string;
-  sectionId?: string;
   knowledge: TopicKnowledge;
   notes?: string;
   order: number;
@@ -40,29 +40,14 @@ export interface Topic {
   nextReview?: Date;
 }
 
-export interface Section {
-  id: string;
-  title: string;
-  subjectId: string;
-  order: number;
-}
-
 export interface Subject {
   id: string;
   title: string;
   examDate?: Date;
-  weight: number; // calculated or user-adjusted
+  weight: number; // priority 1-10
   strategy: StudyStrategy;
   mode: SubjectMode;
   color: string;
-}
-
-export interface TimeBlock {
-  dayOfWeek: number; // 0-6
-  startTime: string; // HH:mm
-  duration: number; // minutes
-  type: ActivityType;
-  negotiable: boolean;
 }
 
 export interface OverloadWarning {

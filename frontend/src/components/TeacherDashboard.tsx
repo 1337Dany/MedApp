@@ -1,38 +1,117 @@
+import { useEffect, useState } from 'react';
 import { Users, TrendingUp, AlertTriangle, BookOpen } from 'lucide-react';
+import { ClassAnalytics, teacherAPI } from '../services/api';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
+interface Insight {
+  tone: 'amber' | 'green' | 'blue' | 'red';
+  title: string;
+  text: string;
+}
+
+const INSIGHT_STYLES = {
+  amber: ['bg-amber-50', 'bg-amber-500', 'text-amber-900', 'text-amber-700'],
+  green: ['bg-green-50', 'bg-green-500', 'text-green-900', 'text-green-700'],
+  blue: ['bg-blue-50', 'bg-blue-500', 'text-blue-900', 'text-blue-700'],
+  red: ['bg-red-50', 'bg-red-500', 'text-red-900', 'text-red-700'],
+};
+
+// Plain-language observations derived from the aggregated numbers.
+function buildInsights(data: ClassAnalytics): Insight[] {
+  const insights: Insight[] = [];
+  const subjects = [...data.subjectPerformance].sort((a, b) => a.avgKnowledge - b.avgKnowledge);
+
+  const weakest = subjects[0];
+  if (weakest && weakest.avgKnowledge < 60) {
+    insights.push({
+      tone: 'amber',
+      title: `${weakest.subject} Needs Attention`,
+      text: `Average knowledge is ${weakest.avgKnowledge}%, and ${weakest.studentsStruggling} of ${weakest.students} students rate most of their topics red. Consider an extra review session or supplementary materials.`,
+    });
+  }
+
+  const strongest = subjects[subjects.length - 1];
+  if (strongest && strongest !== weakest && strongest.avgKnowledge >= 70) {
+    insights.push({
+      tone: 'green',
+      title: `Strong ${strongest.subject} Performance`,
+      text: `Students report ${strongest.avgKnowledge}% average knowledge in ${strongest.subject}.`,
+    });
+  }
+
+  const weeks = data.weeklyEngagement.filter((w) => w.avgCompletionRate > 0);
+  if (weeks.length >= 2) {
+    const change = weeks[weeks.length - 1].avgCompletionRate - weeks[0].avgCompletionRate;
+    insights.push({
+      tone: 'blue',
+      title: 'Completion Rate Trend',
+      text:
+        change === 0
+          ? 'The average completion rate is stable over the last weeks.'
+          : `The average completion rate has ${change > 0 ? 'increased' : 'decreased'} by ${Math.abs(change)} percentage points since ${weeks[0].week.replace('Week of ', '')}.`,
+    });
+  }
+
+  if (data.studentsAtRisk > 0) {
+    insights.push({
+      tone: 'red',
+      title: 'At-Risk Students',
+      text: `${data.studentsAtRisk} student${data.studentsAtRisk === 1 ? ' shows' : 's show'} a completion rate below 60% or mostly red topics. Office hours or tutoring could help.`,
+    });
+  }
+
+  return insights;
+}
+
 export function TeacherDashboard() {
-  // Mock aggregated student data
-  const mockStudentData = {
-    totalStudents: 45,
-    averageCompletionRate: 73,
-    studentsAtRisk: 8,
-    activeSubjects: 12,
+  const [data, setData] = useState<ClassAnalytics | null>(null);
+  const [error, setError] = useState('');
+
+  const load = () => {
+    setError('');
+    teacherAPI
+      .getClassAnalytics()
+      .then(setData)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load class analytics.'));
   };
 
-  // Mock weekly engagement data
-  const weeklyEngagement = [
-    { week: 'Week 1', avgStudyHours: 18, avgCompletionRate: 75 },
-    { week: 'Week 2', avgStudyHours: 20, avgCompletionRate: 78 },
-    { week: 'Week 3', avgStudyHours: 17, avgCompletionRate: 70 },
-    { week: 'Week 4', avgStudyHours: 22, avgCompletionRate: 82 },
-    { week: 'Week 5', avgStudyHours: 19, avgCompletionRate: 76 },
-  ];
+  useEffect(load, []);
 
-  // Mock subject performance data
-  const subjectPerformance = [
-    { subject: 'Anatomy', avgKnowledge: 72, studentsStruggling: 5 },
-    { subject: 'Physiology', avgKnowledge: 68, studentsStruggling: 8 },
-    { subject: 'Biochemistry', avgKnowledge: 58, studentsStruggling: 12 },
-    { subject: 'Pharmacology', avgKnowledge: 75, studentsStruggling: 4 },
-  ];
+  const header = (
+    <div>
+      <h2 className="text-2xl font-semibold text-gray-900">Teacher Dashboard</h2>
+      <p className="text-gray-600 mt-1">Aggregated, anonymized student insights</p>
+    </div>
+  );
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        {header}
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between">
+          <p className="text-sm text-red-700">{error}</p>
+          <button onClick={load} className="px-3 py-1.5 text-sm bg-white border border-red-300 rounded-lg hover:bg-red-100">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="space-y-6">
+        {header}
+        <p className="text-gray-500">Loading class analytics...</p>
+      </div>
+    );
+  }
+
+  const insights = buildInsights(data);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-gray-900">Teacher Dashboard</h2>
-        <p className="text-gray-600 mt-1">Aggregated, anonymized student insights</p>
-      </div>
+      {header}
 
       {/* Info Banner */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -41,13 +120,22 @@ export function TeacherDashboard() {
           <div>
             <h3 className="font-medium text-blue-900">Anonymous Analytics</h3>
             <p className="text-sm text-blue-700 mt-1">
-              All data shown is aggregated and anonymized. Individual student identities are protected.
-              This view helps you understand class-wide patterns and identify areas needing attention.
+              Only students who allowed data sharing are included, and only as aggregates. Groups smaller than{' '}
+              {data.minimumGroupSize} students are never shown, so individual students cannot be identified.
             </p>
           </div>
         </div>
       </div>
 
+      {data.insufficientData ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+          <p className="text-gray-700 font-medium">Not enough data yet</p>
+          <p className="text-gray-500 text-sm mt-1">
+            Analytics appear once at least {data.minimumGroupSize} students share their data.
+          </p>
+        </div>
+      ) : (
+      <>
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg border border-gray-200 p-5">
@@ -55,7 +143,7 @@ export function TeacherDashboard() {
             <div>
               <p className="text-sm text-gray-600">Total Students</p>
               <p className="text-2xl font-semibold text-gray-900 mt-1">
-                {mockStudentData.totalStudents}
+                {data.totalStudents}
               </p>
             </div>
             <Users className="w-8 h-8 text-blue-600" />
@@ -67,7 +155,7 @@ export function TeacherDashboard() {
             <div>
               <p className="text-sm text-gray-600">Avg Completion Rate</p>
               <p className="text-2xl font-semibold text-gray-900 mt-1">
-                {mockStudentData.averageCompletionRate}%
+                {data.averageCompletionRate}%
               </p>
             </div>
             <TrendingUp className="w-8 h-8 text-green-600" />
@@ -79,7 +167,7 @@ export function TeacherDashboard() {
             <div>
               <p className="text-sm text-gray-600">Students at Risk</p>
               <p className="text-2xl font-semibold text-gray-900 mt-1">
-                {mockStudentData.studentsAtRisk}
+                {data.studentsAtRisk}
               </p>
             </div>
             <AlertTriangle className="w-8 h-8 text-amber-600" />
@@ -91,7 +179,7 @@ export function TeacherDashboard() {
             <div>
               <p className="text-sm text-gray-600">Active Subjects</p>
               <p className="text-2xl font-semibold text-gray-900 mt-1">
-                {mockStudentData.activeSubjects}
+                {data.activeSubjects}
               </p>
             </div>
             <BookOpen className="w-8 h-8 text-purple-600" />
@@ -103,7 +191,7 @@ export function TeacherDashboard() {
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h3 className="font-medium text-gray-900 mb-4">Class Engagement Trends</h3>
         <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={weeklyEngagement}>
+          <LineChart data={data.weeklyEngagement}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="week" />
             <YAxis yAxisId="left" />
@@ -133,8 +221,13 @@ export function TeacherDashboard() {
       {/* Subject Performance */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h3 className="font-medium text-gray-900 mb-4">Subject Performance Overview</h3>
+        {data.subjectPerformance.length === 0 ? (
+          <p className="text-sm text-gray-500 py-8 text-center">
+            No subject is studied by at least {data.minimumGroupSize} sharing students yet.
+          </p>
+        ) : (
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={subjectPerformance}>
+          <BarChart data={data.subjectPerformance}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="subject" />
             <YAxis />
@@ -144,66 +237,33 @@ export function TeacherDashboard() {
             <Bar dataKey="studentsStruggling" fill="#f59e0b" name="Students Struggling" />
           </BarChart>
         </ResponsiveContainer>
+        )}
       </div>
 
       {/* Insights and Recommendations */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h3 className="font-medium text-gray-900 mb-4">Insights & Recommendations</h3>
-        <div className="space-y-3">
-          <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-lg">
-            <div className="w-2 h-2 bg-amber-500 rounded-full mt-2" />
-            <div>
-              <p className="text-sm font-medium text-amber-900">Biochemistry Needs Attention</p>
-              <p className="text-xs text-amber-700 mt-1">
-                12 students are struggling with Biochemistry topics. Consider additional review sessions
-                or supplementary materials for Glycolysis, Krebs Cycle, and related metabolic pathways.
-              </p>
-            </div>
+        {insights.length === 0 ? (
+          <p className="text-sm text-gray-500">No notable patterns at the moment.</p>
+        ) : (
+          <div className="space-y-3">
+            {insights.map((insight) => {
+              const [box, dot, title, text] = INSIGHT_STYLES[insight.tone];
+              return (
+                <div key={insight.title} className={`flex items-start gap-3 p-3 rounded-lg ${box}`}>
+                  <div className={`w-2 h-2 rounded-full mt-2 ${dot}`} />
+                  <div>
+                    <p className={`text-sm font-medium ${title}`}>{insight.title}</p>
+                    <p className={`text-xs mt-1 ${text}`}>{insight.text}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-
-          <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg">
-            <div className="w-2 h-2 bg-green-500 rounded-full mt-2" />
-            <div>
-              <p className="text-sm font-medium text-green-900">Strong Pharmacology Performance</p>
-              <p className="text-xs text-green-700 mt-1">
-                Students are performing well in Pharmacology with 75% average knowledge retention.
-                Current teaching methods are effective.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-            <div className="w-2 h-2 bg-blue-500 rounded-full mt-2" />
-            <div>
-              <p className="text-sm font-medium text-blue-900">Completion Rate Trend</p>
-              <p className="text-xs text-blue-700 mt-1">
-                Average completion rate has increased by 7% over the last month, indicating improved
-                time management and engagement among students.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3 p-3 bg-red-50 rounded-lg">
-            <div className="w-2 h-2 bg-red-500 rounded-full mt-2" />
-            <div>
-              <p className="text-sm font-medium text-red-900">At-Risk Students</p>
-              <p className="text-xs text-red-700 mt-1">
-                8 students show patterns of low completion rates (&lt;60%) and multiple red topics.
-                Early intervention recommended through office hours or tutoring support.
-              </p>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
-
-      {/* Backend Connection Notice */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <p className="text-sm text-gray-600">
-          <span className="font-medium">Backend Integration:</span> This teacher dashboard displays mock data.
-          Connect to your backend API in a new service file to fetch real aggregated student analytics.
-          Ensure all data is properly anonymized before transmission.
-        </p>
-      </div>
+      </>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Subject, StudyStrategy, SubjectMode } from '../types';
+import { parseDateOnly, toDateInputValue } from '../utils/dates';
 
 interface SubjectModalProps {
   subject: Subject | null;
@@ -18,37 +19,42 @@ export function SubjectModal({ subject, onClose }: SubjectModalProps) {
 
   const [formData, setFormData] = useState({
     title: subject?.title || '',
-    examDate: subject?.examDate
-      ? new Date(subject.examDate).toISOString().split('T')[0]
-      : '',
+    examDate: subject?.examDate ? toDateInputValue(new Date(subject.examDate)) : '',
     weight: subject?.weight || 5,
     strategy: subject?.strategy || ('manual' as StudyStrategy),
     mode: subject?.mode || ('relaxed' as SubjectMode),
     color: subject?.color || PRESET_COLORS[0],
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
-    const subjectData: Partial<Subject> = {
-      title: formData.title,
-      examDate: formData.examDate ? new Date(formData.examDate) : undefined,
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    const subjectData: Omit<Subject, 'id'> = {
+      title: formData.title.trim(),
+      examDate: formData.examDate ? parseDateOnly(formData.examDate) : undefined,
       weight: formData.weight,
       strategy: formData.strategy,
       mode: formData.mode,
       color: formData.color,
     };
 
-    if (subject) {
-      updateSubject(subject.id, subjectData);
-    } else {
-      addSubject({
-        id: crypto.randomUUID(),
-        ...subjectData,
-      } as Subject);
+    setIsSaving(true);
+    try {
+      if (subject) {
+        await updateSubject(subject.id, subjectData);
+      } else {
+        await addSubject(subjectData);
+      }
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the subject.');
+    } finally {
+      setIsSaving(false);
     }
-
-    onClose();
   };
 
   return (
@@ -64,6 +70,10 @@ export function SubjectModal({ subject, onClose }: SubjectModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <p className="p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</p>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Subject Name *
@@ -71,6 +81,7 @@ export function SubjectModal({ subject, onClose }: SubjectModalProps) {
             <input
               type="text"
               required
+              maxLength={50}
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -171,9 +182,10 @@ export function SubjectModal({ subject, onClose }: SubjectModalProps) {
           <div className="flex gap-3 pt-4">
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              disabled={isSaving}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
-              {subject ? 'Update' : 'Create'}
+              {isSaving ? 'Saving...' : subject ? 'Update' : 'Create'}
             </button>
             <button
               type="button"

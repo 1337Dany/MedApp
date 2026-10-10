@@ -2,16 +2,10 @@
 
 namespace MedApp.Services.Repositories;
 
+// Lookup table seeded by migrations; read-only at runtime.
 public interface IStudyStrategyRepository
 {
-    Task<StudyStrategy?> GetByIdAsync(int id, CancellationToken ct = default);
-
     Task<IEnumerable<StudyStrategy>> GetAllAsync(CancellationToken ct = default);
 
-    Task AddAsync(StudyStrategy strategy, CancellationToken ct = default);
-
-    Task UpdateAsync(StudyStrategy strategy, CancellationToken ct = default);
-
-    Task DeleteAsync(int id, CancellationToken ct = default);
+    Task<bool> ExistsAsync(int id, CancellationToken ct = default);
 }
-

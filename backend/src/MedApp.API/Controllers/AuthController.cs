@@ -1,19 +1,15 @@
-using System.Security.Claims;
 using FluentValidation;
-using FluentValidation.Results;
 using MedApp.Services.DTOs.Auth;
 using MedApp.Services.DTOs.Users;
 using MedApp.Services.Services.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace MedApp.API.Controllers;
 
-[ApiController]
 [Route("api/auth")]
-public class AuthController : ControllerBase
+public class AuthController : ApiControllerBase
 {
     public const string RateLimitPolicy = "auth";
 
@@ -131,19 +127,6 @@ public class AuthController : ControllerBase
         }
 
         return Ok(user);
-    }
-
-    private bool TryGetUserId(out Guid userId) =>
-        Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out userId);
-
-    private static ModelStateDictionary BuildModelState(ValidationResult validation)
-    {
-        var modelState = new ModelStateDictionary();
-        foreach (var error in validation.Errors)
-        {
-            modelState.AddModelError(error.PropertyName, error.ErrorMessage);
-        }
-        return modelState;
     }
 
     private IActionResult MapResult(AuthResult result)

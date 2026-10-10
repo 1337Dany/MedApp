@@ -1,0 +1,23 @@
+# Production profile, layered on top of docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Only the web app (nginx) is published; the API and the database are reachable inside the compose
+# network only, and the API trusts X-Forwarded-For from that network alone. Terminate TLS in front of nginx.
+services:
+  api:
+    ports: !reset []
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ForwardedHeaders__KnownNetworks__0: 172.30.0.0/24
+
+  postgresql:
+    ports: !reset []
+
+  frontend:
+    ports: !override
+      - ${FRONTEND_PORT:-80}:80
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

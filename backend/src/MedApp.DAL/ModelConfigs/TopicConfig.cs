@@ -18,7 +18,17 @@ public class TopicConfig : IEntityTypeConfiguration<Topic>
 
         builder
             .Property(t => t.TopicTitle)
-            .HasMaxLength(50)
+            .HasMaxLength(100)
+            .IsRequired();
+
+        builder
+            .Property(t => t.ReviewStage)
+            .HasDefaultValue(0)
+            .IsRequired();
+
+        builder
+            .Property(t => t.Order)
+            .HasDefaultValue(0)
             .IsRequired();
 
         builder

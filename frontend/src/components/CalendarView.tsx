@@ -3,9 +3,12 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Activity } from '../types';
 import { ActivityModal } from './ActivityModal';
+import { addDays, startOfDay } from '../utils/dates';
+import { expandOccurrences, Occurrence } from '../utils/recurrence';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const HOUR_HEIGHT_PX = 60; // matches min-h-[60px] of an hour cell
 
 export function CalendarView() {
   const { activities, subjects } = useStore();
@@ -14,12 +17,8 @@ export function CalendarView() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newActivitySlot, setNewActivitySlot] = useState<{ day: number; hour: number } | null>(null);
 
-  const weekStart = useMemo(() => {
-    const date = new Date(currentDate);
-    const day = date.getDay();
-    const diff = date.getDate() - day;
-    return new Date(date.setDate(diff));
-  }, [currentDate]);
+  // Sunday 00:00 of the displayed week.
+  const weekStart = useMemo(() => addDays(startOfDay(currentDate), -currentDate.getDay()), [currentDate]);
 
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
@@ -29,29 +28,24 @@ export function CalendarView() {
     });
   }, [weekStart]);
 
-  const weekActivities = useMemo(() => {
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 7);
+  // Recurring series are expanded into their occurrences in this week.
+  const weekOccurrences = useMemo(
+    () => expandOccurrences(activities, weekStart, addDays(weekStart, 7)),
+    [activities, weekStart],
+  );
 
-    return activities.filter((activity) => {
-      const activityDate = new Date(activity.startTime);
-      return activityDate >= weekStart && activityDate < weekEnd;
-    });
-  }, [activities, weekStart]);
+  // Each occurrence is drawn once per day, in the hour cell where it starts on that day
+  // (00:00 when it continues from the previous day), as tall as its duration within the day.
+  const getBlocksForSlot = (dayIndex: number, hour: number) => {
+    const dayStart = weekDays[dayIndex];
+    const dayEnd = addDays(dayStart, 1);
 
-  const getActivitiesForSlot = (dayIndex: number, hour: number) => {
-    const date = weekDays[dayIndex];
-    const slotStart = new Date(date);
-    slotStart.setHours(hour, 0, 0, 0);
-    const slotEnd = new Date(slotStart);
-    slotEnd.setHours(hour + 1, 0, 0, 0);
-
-    return weekActivities.filter((activity) => {
-      const activityStart = new Date(activity.startTime);
-      const activityEnd = new Date(activityStart);
-      activityEnd.setMinutes(activityEnd.getMinutes() + activity.duration);
-
-      return activityStart < slotEnd && activityEnd > slotStart;
+    return weekOccurrences.flatMap((occurrence: Occurrence) => {
+      const start = occurrence.start > dayStart ? occurrence.start : dayStart;
+      const end = occurrence.end < dayEnd ? occurrence.end : dayEnd;
+      if (start >= end || start.getHours() !== hour || start.getDate() !== dayStart.getDate()) return [];
+      const minutes = (end.getTime() - start.getTime()) / 60_000;
+      return [{ occurrence, start, top: start.getMinutes(), height: Math.max(minutes, 20) }];
     });
   };
 
@@ -182,36 +176,29 @@ export function CalendarView() {
                     {hour.toString().padStart(2, '0')}:00
                   </div>
                   {weekDays.map((_, dayIndex) => {
-                    const slotActivities = getActivitiesForSlot(dayIndex, hour);
+                    const slotBlocks = getBlocksForSlot(dayIndex, hour);
                     return (
                       <div
                         key={dayIndex}
                         className="relative border-l border-gray-200 min-h-[60px] hover:bg-gray-50 cursor-pointer group"
                         onClick={() => handleSlotClick(dayIndex, hour)}
                       >
-                        {slotActivities.map((activity) => {
-                          const activityStart = new Date(activity.startTime);
-                          const startMinute = activityStart.getMinutes();
-                          const topOffset = (startMinute / 60) * 100;
-                          const height = Math.min(
-                            (activity.duration / 60) * 100,
-                            100
-                          );
-
+                        {slotBlocks.map(({ occurrence, start, top, height }) => {
+                          const { activity } = occurrence;
                           return (
                             <div
-                              key={activity.id}
-                              className="absolute left-0 right-0 mx-1 rounded px-2 py-1 text-xs text-white cursor-pointer hover:opacity-80 overflow-hidden"
+                              key={`${activity.id}-${start.getTime()}`}
+                              className="absolute left-0 right-0 mx-1 z-10 rounded px-2 py-1 text-xs text-white cursor-pointer hover:opacity-80 overflow-hidden"
                               style={{
-                                top: `${topOffset}%`,
-                                height: `${height}%`,
+                                top: `${(top / 60) * HOUR_HEIGHT_PX}px`,
+                                height: `${(height / 60) * HOUR_HEIGHT_PX}px`,
                                 backgroundColor: getActivityColor(activity),
                               }}
                               onClick={(e) => handleActivityClick(activity, e)}
                             >
                               <div className="font-medium truncate">{activity.title}</div>
                               <div className="text-[10px] opacity-90">
-                                {activityStart.toLocaleTimeString('en-US', {
+                                {occurrence.start.toLocaleTimeString('en-US', {
                                   hour: '2-digit',
                                   minute: '2-digit',
                                 })}

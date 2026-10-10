@@ -14,28 +14,9 @@ public class ActivityTypeRepository : IActivityTypeRepository
         _db = db;
     }
 
-    public Task<ActivityType?> GetByIdAsync(int id, CancellationToken ct = default) =>
-        _db.ActivityTypes.FirstOrDefaultAsync(t => t.TypeId == id, ct);
-
     public async Task<IEnumerable<ActivityType>> GetAllAsync(CancellationToken ct = default) =>
-        await _db.ActivityTypes.ToListAsync(ct);
+        await _db.ActivityTypes.AsNoTracking().OrderBy(t => t.TypeId).ToListAsync(ct);
 
-    public Task AddAsync(ActivityType type, CancellationToken ct = default)
-    {
-        _db.ActivityTypes.Add(type);
-        return Task.CompletedTask;
-    }
-
-    public Task UpdateAsync(ActivityType type, CancellationToken ct = default)
-    {
-        _db.ActivityTypes.Update(type);
-        return Task.CompletedTask;
-    }
-
-    public async Task DeleteAsync(int id, CancellationToken ct = default)
-    {
-        var entity = await _db.ActivityTypes.FindAsync(new object[] { id }, ct);
-        if (entity is not null) _db.ActivityTypes.Remove(entity);
-    }
+    public Task<bool> ExistsAsync(int id, CancellationToken ct = default) =>
+        _db.ActivityTypes.AnyAsync(t => t.TypeId == id, ct);
 }
-

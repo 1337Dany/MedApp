@@ -1,17 +1,15 @@
-﻿using MedApp.Models.Models;
-using MedApp.Models.Models.Enums;
+﻿using MedApp.Models.Models.Enums;
+using MedApp.Services.DTOs.Activities;
 
 namespace MedApp.Services.Services;
 
+// Every method is scoped to the caller (userId from the token). Null / false means "not found or not yours".
 public interface IActivityService
 {
-    Task<Activity?> GetByIdAsync(Guid activityId, CancellationToken ct = default);
-    Task<IEnumerable<Activity>> GetBySubjectIdAsync(Guid subjectId, CancellationToken ct = default);
-    Task<IEnumerable<Activity>> GetByStatusAsync(Status status, CancellationToken ct = default);
-    Task<IEnumerable<Activity>> GetAllAsync(CancellationToken ct = default);
-    Task<Activity> AddAsync(Activity activity, CancellationToken ct = default);
-    Task UpdateAsync(Activity activity, CancellationToken ct = default);
-    Task DeleteAsync(Guid activityId, CancellationToken ct = default);
-    Task DeleteBySubjectIdAsync(Guid subjectId, CancellationToken ct = default);
+    Task<IEnumerable<ActivityDto>> GetAllAsync(Guid userId, DateTime? from = null, DateTime? to = null, CancellationToken ct = default);
+    Task<ActivityDto?> GetByIdAsync(Guid activityId, Guid userId, CancellationToken ct = default);
+    Task<ServiceResult<ActivityDto>> CreateAsync(Guid userId, ActivityRequest request, CancellationToken ct = default);
+    Task<ServiceResult<ActivityDto>> UpdateAsync(Guid activityId, Guid userId, ActivityRequest request, CancellationToken ct = default);
+    Task<ActivityDto?> UpdateStatusAsync(Guid activityId, Guid userId, Status status, CancellationToken ct = default);
+    Task<bool> DeleteAsync(Guid activityId, Guid userId, CancellationToken ct = default);
 }
-
