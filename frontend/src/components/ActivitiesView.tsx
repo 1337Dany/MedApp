@@ -125,6 +125,11 @@ export function ActivitiesView() {
                             Non-negotiable
                           </span>
                         )}
+                        {activity.autoPlanned && (
+                          <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-800 rounded">
+                            Auto-planned
+                          </span>
+                        )}
                         {activity.recurring && (
                           <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">
                             Recurring

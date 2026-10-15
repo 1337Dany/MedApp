@@ -14,17 +14,24 @@ public class SubjectRepository : ISubjectRepository
         _db = db;
     }
 
-    public Task<Subject?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
-        _db.Subjects
-            .Include(s => s.Topics)
-            .Include(s => s.Activities)
-            .FirstOrDefaultAsync(s => s.SubjectId == id, ct);
+    public Task<Subject?> GetByIdAsync(Guid id, Guid userId, CancellationToken ct = default) =>
+        _db.Subjects.FirstOrDefaultAsync(s => s.SubjectId == id && s.UserId == userId, ct);
 
     public async Task<IEnumerable<Subject>> GetByUserIdAsync(Guid userId, CancellationToken ct = default) =>
-        await _db.Subjects.Where(s => s.UserId == userId).ToListAsync(ct);
+        await _db.Subjects
+            .Where(s => s.UserId == userId)
+            .OrderBy(s => s.Name)
+            .ToListAsync(ct);
 
-    public async Task<IEnumerable<Subject>> GetAllAsync(CancellationToken ct = default) =>
-        await _db.Subjects.ToListAsync(ct);
+    public Task<List<Subject>> GetByUserIdsAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct = default) =>
+        _db.Subjects
+            .AsNoTracking()
+            .Include(s => s.Topics)
+            .Where(s => userIds.Contains(s.UserId))
+            .ToListAsync(ct);
+
+    public Task<bool> ExistsAsync(Guid id, Guid userId, CancellationToken ct = default) =>
+        _db.Subjects.AnyAsync(s => s.SubjectId == id && s.UserId == userId, ct);
 
     public Task AddAsync(Subject subject, CancellationToken ct = default)
     {
@@ -32,16 +39,9 @@ public class SubjectRepository : ISubjectRepository
         return Task.CompletedTask;
     }
 
-    public Task UpdateAsync(Subject subject, CancellationToken ct = default)
+    public Task DeleteAsync(Subject subject, CancellationToken ct = default)
     {
-        _db.Subjects.Update(subject);
+        _db.Subjects.Remove(subject);
         return Task.CompletedTask;
     }
-
-    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
-    {
-        var entity = await _db.Subjects.FindAsync(new object[] { id }, ct);
-        if (entity is not null) _db.Subjects.Remove(entity);
-    }
 }
-

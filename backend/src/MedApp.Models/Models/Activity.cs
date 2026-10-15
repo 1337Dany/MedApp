@@ -6,8 +6,15 @@ public class Activity
 {
     public Guid ActivityId { get; set; }
 
-    public Guid SubjectId { get; set; }
-    public Subject Subject { get; set; } = null!;
+    // Owner. Activities without a subject (sleep, meals, sport) still belong to a user.
+    public Guid UserId { get; set; }
+    public User User { get; set; } = null!;
+
+    public Guid? SubjectId { get; set; }
+    public Subject? Subject { get; set; }
+
+    public Guid? TopicId { get; set; }
+    public Topic? Topic { get; set; }
 
     public string Title { get; set; } = null!;
 
@@ -28,4 +35,7 @@ public class Activity
     public string? Notes { get; set; }
 
     public Status Status { get; set; }
+
+    // Created by the study planner; replaced on re-planning while still scheduled.
+    public bool IsAutoPlanned { get; set; }
 }

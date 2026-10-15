@@ -40,6 +40,11 @@ namespace MedApp.DAL.Migrations
                     b.Property<int>("DurationMinutes")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("IsAutoPlanned")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IsNegotiable")
                         .HasColumnType("boolean");
 
@@ -62,13 +67,19 @@ namespace MedApp.DAL.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
-                    b.Property<Guid>("SubjectId")
+                    b.Property<Guid?>("SubjectId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<Guid?>("TopicId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("ActivityId");
 
@@ -77,6 +88,10 @@ namespace MedApp.DAL.Migrations
                     b.HasIndex("RecurringOptionsId");
 
                     b.HasIndex("SubjectId");
+
+                    b.HasIndex("TopicId");
+
+                    b.HasIndex("UserId", "StartTime");
 
                     b.ToTable("Activities");
                 });
@@ -169,6 +184,9 @@ namespace MedApp.DAL.Migrations
                     b.Property<int>("Frequency")
                         .HasColumnType("integer");
 
+                    b.Property<DateOnly?>("Until")
+                        .HasColumnType("date");
+
                     b.HasKey("RecurringOptionsId");
 
                     b.ToTable("RecurringOptions");
@@ -257,7 +275,7 @@ namespace MedApp.DAL.Migrations
                         .HasMaxLength(7)
                         .HasColumnType("character varying(7)");
 
-                    b.Property<DateOnly>("ExamDate")
+                    b.Property<DateOnly?>("ExamDate")
                         .HasColumnType("date");
 
                     b.Property<string>("Name")
@@ -296,16 +314,32 @@ namespace MedApp.DAL.Migrations
                     b.Property<int>("Feedback")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("LastStudied")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("NextReview")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Notes")
                         .HasColumnType("text");
+
+                    b.Property<int>("Order")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("ReviewStage")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<Guid>("SubjectId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("TopicTitle")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.HasKey("TopicId");
 
@@ -351,6 +385,10 @@ namespace MedApp.DAL.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(0);
 
+                    b.Property<string>("TimeZone")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Email")
@@ -369,11 +407,22 @@ namespace MedApp.DAL.Migrations
 
                     b.HasOne("MedApp.Models.Models.RecurringOptions", "RecurringOptions")
                         .WithMany("Activities")
-                        .HasForeignKey("RecurringOptionsId");
+                        .HasForeignKey("RecurringOptionsId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("MedApp.Models.Models.Subject", "Subject")
                         .WithMany("Activities")
                         .HasForeignKey("SubjectId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("MedApp.Models.Models.Topic", "Topic")
+                        .WithMany()
+                        .HasForeignKey("TopicId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MedApp.Models.Models.User", "User")
+                        .WithMany("Activities")
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -382,6 +431,10 @@ namespace MedApp.DAL.Migrations
                     b.Navigation("RecurringOptions");
 
                     b.Navigation("Subject");
+
+                    b.Navigation("Topic");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("MedApp.Models.Models.OptionsDayOfWeek", b =>
@@ -462,6 +515,8 @@ namespace MedApp.DAL.Migrations
 
             modelBuilder.Entity("MedApp.Models.Models.User", b =>
                 {
+                    b.Navigation("Activities");
+
                     b.Navigation("RefreshTokens");
 
                     b.Navigation("Subjects");

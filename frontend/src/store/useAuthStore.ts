@@ -1,75 +1,86 @@
 import { create } from 'zustand';
-import { User, AuthState } from '../types/auth';
-import { authAPI } from '../services/api';
+import { User, AuthState, RegisterPayload } from '../types/auth';
+import { authAPI, ProfileUpdate, usersAPI } from '../services/api';
+import { setSessionExpiredHandler, tokenStorage } from '../services/http';
 
 interface AuthStore extends AuthState {
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string, role: 'student' | 'teacher') => Promise<void>;
-  logout: () => void;
+  register: (payload: RegisterPayload) => Promise<void>;
+  logout: () => Promise<void>;
   setUser: (user: User | null) => void;
+  restoreSession: () => Promise<void>;
+  updateProfile: (profile: ProfileUpdate) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   isAuthenticated: false,
-  isLoading: false,
+  // True until the stored session (if any) has been checked against the API.
+  isLoading: true,
 
-  login: async (email: string, password: string) => {
-    set({ isLoading: true });
-    
+  login: async (email, password) => {
+    const tokens = await authAPI.login(email, password);
+    tokenStorage.setTokens(tokens);
     try {
-      const data = await authAPI.login(email, password);
-      
-      set({ user: data.user, isAuthenticated: true, isLoading: false });
-      
-      // Store in localStorage for persistence
-      localStorage.setItem('authToken', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      const user = await authAPI.getCurrentUser();
+      set({ user, isAuthenticated: true });
     } catch (error) {
-      set({ isLoading: false });
+      tokenStorage.clearTokens();
       throw error;
     }
   },
 
-  register: async (email: string, password: string, name: string, role: 'student' | 'teacher') => {
-    set({ isLoading: true });
-    
+  register: async (payload) => {
+    const tokens = await authAPI.register(payload);
+    tokenStorage.setTokens(tokens);
     try {
-      const data = await authAPI.register(email, password, name, role);
-      
-      set({ user: data.user, isAuthenticated: true, isLoading: false });
-      
-      // Store in localStorage for persistence
-      localStorage.setItem('authToken', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      const user = await authAPI.getCurrentUser();
+      set({ user, isAuthenticated: true });
     } catch (error) {
-      set({ isLoading: false });
+      tokenStorage.clearTokens();
       throw error;
     }
   },
 
-  logout: () => {
-    authAPI.logout().catch(console.error);
-    
+  logout: async () => {
+    const refreshToken = tokenStorage.getRefreshToken();
+    if (refreshToken) {
+      // Best effort: the local session ends even if the API call fails.
+      await authAPI.logout(refreshToken).catch(console.error);
+    }
+    tokenStorage.clearTokens();
     set({ user: null, isAuthenticated: false });
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('user');
   },
 
-  setUser: (user: User | null) => {
+  setUser: (user) => {
     set({ user, isAuthenticated: !!user });
+  },
+
+  updateProfile: async (profile) => {
+    const user = await usersAPI.updateMe(profile);
+    set({ user });
+  },
+
+  restoreSession: async () => {
+    if (!tokenStorage.getRefreshToken()) {
+      set({ isLoading: false });
+      return;
+    }
+    try {
+      // /me refreshes the access token transparently when it has expired.
+      const user = await authAPI.getCurrentUser();
+      set({ user, isAuthenticated: true, isLoading: false });
+    } catch {
+      tokenStorage.clearTokens();
+      set({ user: null, isAuthenticated: false, isLoading: false });
+    }
   },
 }));
 
-// Initialize auth state from localStorage
+setSessionExpiredHandler(() => useAuthStore.getState().setUser(null));
+
 if (typeof window !== 'undefined') {
-  const storedUser = localStorage.getItem('user');
-  if (storedUser) {
-    try {
-      const user = JSON.parse(storedUser);
-      useAuthStore.getState().setUser(user);
-    } catch (error) {
-      localStorage.removeItem('user');
-    }
-  }
+  // Drop the user object the mock auth used to keep; the API is the source of truth now.
+  localStorage.removeItem('user');
+  useAuthStore.getState().restoreSession();
 }

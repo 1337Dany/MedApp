@@ -1,38 +1,55 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { generateDemoData } from '../utils/demoData';
+import { activitiesAPI, subjectsAPI, topicsAPI } from '../services/api';
 
 interface InitialSetupProps {
   onComplete: () => void;
 }
 
 export function InitialSetup({ onComplete }: InitialSetupProps) {
-  const { subjects, addSubject, addTopic, addActivity } = useStore();
+  const { loadAll } = useStore();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const loadDemoData = () => {
+  // Saves the demo records through the API, mapping demo keys to the ids the server assigns.
+  // Goes straight to the API (not the store) so this screen stays up until everything is saved.
+  const loadDemoData = async () => {
     setLoading(true);
+    setError('');
     const { subjects: demoSubjects, topics: demoTopics, activities: demoActivities } = generateDemoData();
 
-    demoSubjects.forEach(addSubject);
-    demoTopics.forEach(addTopic);
-    demoActivities.forEach(addActivity);
+    try {
+      const subjectIds: Record<string, string> = {};
+      for (const { key, ...subject } of demoSubjects) {
+        subjectIds[key] = (await subjectsAPI.create(subject)).id;
+      }
 
-    setTimeout(() => {
-      setLoading(false);
+      const topicIds: Record<string, string> = {};
+      for (const { key, subjectKey, ...topic } of demoTopics) {
+        topicIds[key] = (await topicsAPI.create(subjectIds[subjectKey], topic)).id;
+      }
+
+      for (const { subjectKey, topicKey, ...activity } of demoActivities) {
+        await activitiesAPI.create({
+          ...activity,
+          subjectId: subjectKey ? subjectIds[subjectKey] : undefined,
+          topicId: topicKey ? topicIds[topicKey] : undefined,
+        });
+      }
+
       onComplete();
-    }, 500);
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the demo data.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const startFresh = () => {
     onComplete();
   };
-
-  // If already has subjects, skip setup
-  if (subjects.length > 0) {
-    onComplete();
-    return null;
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -69,6 +86,10 @@ export function InitialSetup({ onComplete }: InitialSetupProps) {
             </p>
           </div>
         </div>
+
+        {error && (
+          <p className="mb-4 p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</p>
+        )}
 
         <div className="space-y-3">
           <button

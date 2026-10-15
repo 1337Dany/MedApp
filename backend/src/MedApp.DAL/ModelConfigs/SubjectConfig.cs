@@ -28,7 +28,7 @@ public class SubjectConfig : IEntityTypeConfiguration<Subject>
 
         builder
             .Property(s => s.ExamDate)
-            .IsRequired();
+            .IsRequired(false);
 
         builder
             .HasOne(s => s.PlanningMethod)

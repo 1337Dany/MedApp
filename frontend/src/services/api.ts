@@ -1,173 +1,168 @@
-// API configuration
-// Relative by default: nginx (compose) and the Vite dev proxy forward /api to the backend.
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? '/api';
+import { AuthTokens, BackendRole, RegisterPayload, User, UserRole } from '../types/auth';
+import { Activity, ActivityStatus, Subject, Topic } from '../types';
+import { authenticatedFetch, publicFetch } from './http';
+import {
+  ActivityDto,
+  PlanningWarningDto,
+  SubjectDto,
+  TopicDto,
+  fromActivityDto,
+  fromWarningDto,
+  fromSubjectDto,
+  fromTopicDto,
+  toActivityRequest,
+  toBackendStatus,
+  toSubjectRequest,
+  toTopicRequest,
+} from './mappers';
 
-// Helper function to get auth token
-const getAuthToken = (): string | null => {
-  return localStorage.getItem('authToken');
+interface UserDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  email: string;
+  dataPermission: boolean;
+  role: BackendRole;
+}
+
+const ROLE_FROM_BACKEND: Record<BackendRole, UserRole> = {
+  user: 'student',
+  teacher: 'teacher',
+  admin: 'admin',
 };
 
-// Helper function for authenticated requests
-const authenticatedFetch = async (url: string, options: RequestInit = {}) => {
-  const token = getAuthToken();
-  
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(token && { 'Authorization': `Bearer ${token}` }),
-    ...options.headers,
-  };
+export const mapUserDto = (dto: UserDto): User => ({
+  id: dto.id,
+  email: dto.email,
+  firstName: dto.firstName,
+  lastName: dto.lastName,
+  name: `${dto.firstName} ${dto.lastName}`.trim(),
+  dateOfBirth: dto.dateOfBirth,
+  dataPermission: dto.dataPermission,
+  role: ROLE_FROM_BACKEND[dto.role] ?? 'student',
+});
 
-  const response = await fetch(`${API_BASE_URL}${url}`, {
-    ...options,
-    headers,
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Request failed' }));
-    throw new Error(error.message || 'Request failed');
-  }
-
-  return response.json();
-};
-
-// Authentication API
+// Authentication API -> backend/src/MedApp.API/Controllers/AuthController.cs
 export const authAPI = {
-  login: async (email: string, password: string) => {
-    // TODO: Uncomment and connect to your backend
-    // return authenticatedFetch('/auth/login', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ email, password }),
-    // });
+  register: (payload: RegisterPayload) =>
+    publicFetch<AuthTokens>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 
-    // Mock response - remove this when connecting to backend
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return {
-      user: {
-        id: crypto.randomUUID(),
-        email,
-        name: email.split('@')[0],
-        role: 'student',
-        createdAt: new Date(),
-      },
-      token: 'mock_jwt_token_' + Date.now(),
-    };
-  },
+  login: (email: string, password: string) =>
+    publicFetch<AuthTokens>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
 
-  register: async (email: string, password: string, name: string, role: 'student' | 'teacher') => {
-    // TODO: Uncomment and connect to your backend
-    // return authenticatedFetch('/auth/register', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ email, password, name, role }),
-    // });
+  logout: (refreshToken: string) =>
+    authenticatedFetch<void>('/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    }),
 
-    // Mock response - remove this when connecting to backend
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return {
-      user: {
-        id: crypto.randomUUID(),
-        email,
-        name,
-        role,
-        createdAt: new Date(),
-      },
-      token: 'mock_jwt_token_' + Date.now(),
-    };
-  },
-
-  logout: async () => {
-    // TODO: Uncomment and connect to your backend
-    // return authenticatedFetch('/auth/logout', { method: 'POST' });
-
-    // Mock response - remove this when connecting to backend
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return { message: 'Logged out successfully' };
-  },
-
-  getCurrentUser: async () => {
-    // TODO: Uncomment and connect to your backend
-    // return authenticatedFetch('/auth/me');
-
-    // Mock response - remove this when connecting to backend
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      return { user: JSON.parse(storedUser) };
-    }
-    throw new Error('Not authenticated');
-  },
+  getCurrentUser: async (): Promise<User> => mapUserDto(await authenticatedFetch<UserDto>('/auth/me')),
 };
 
-// Teacher Analytics API
+const ROLE_TO_BACKEND: Record<UserRole, BackendRole> = {
+  student: 'user',
+  teacher: 'teacher',
+  admin: 'admin',
+};
+
+export interface ProfileUpdate {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string; // YYYY-MM-DD
+  dataPermission: boolean;
+}
+
+// Profile, consent and role management -> UsersController
+export const usersAPI = {
+  updateMe: async (profile: ProfileUpdate) =>
+    mapUserDto(await authenticatedFetch<UserDto>('/users/me', { method: 'PUT', body: JSON.stringify(profile) })),
+  // Admin only
+  getAll: async () => (await authenticatedFetch<UserDto[]>('/users')).map(mapUserDto),
+  setRole: async (id: string, role: UserRole) =>
+    mapUserDto(
+      await authenticatedFetch<UserDto>(`/users/${id}/role`, {
+        method: 'PUT',
+        body: JSON.stringify({ role: ROLE_TO_BACKEND[role] }),
+      }),
+    ),
+};
+
+// Aggregated, anonymized class data -> TeacherController (teachers and admins)
+export interface ClassAnalytics {
+  insufficientData: boolean;
+  minimumGroupSize: number;
+  totalStudents: number;
+  averageCompletionRate: number;
+  studentsAtRisk: number;
+  activeSubjects: number;
+  weeklyEngagement: { week: string; weekStart: string; avgStudyHours: number; avgCompletionRate: number }[];
+  subjectPerformance: { subject: string; students: number; avgKnowledge: number; studentsStruggling: number }[];
+}
+
 export const teacherAPI = {
-  getClassAnalytics: async () => {
-    // TODO: Uncomment and connect to your backend
-    // return authenticatedFetch('/teacher/analytics');
-
-    // Mock response - remove this when connecting to backend
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return {
-      totalStudents: 45,
-      averageCompletionRate: 73,
-      studentsAtRisk: 8,
-      activeSubjects: 12,
-      weeklyEngagement: [
-        { week: 'Week 1', avgStudyHours: 18, avgCompletionRate: 75 },
-        { week: 'Week 2', avgStudyHours: 20, avgCompletionRate: 78 },
-        { week: 'Week 3', avgStudyHours: 17, avgCompletionRate: 70 },
-        { week: 'Week 4', avgStudyHours: 22, avgCompletionRate: 82 },
-        { week: 'Week 5', avgStudyHours: 19, avgCompletionRate: 76 },
-      ],
-      subjectPerformance: [
-        { subject: 'Anatomy', avgKnowledge: 72, studentsStruggling: 5 },
-        { subject: 'Physiology', avgKnowledge: 68, studentsStruggling: 8 },
-        { subject: 'Biochemistry', avgKnowledge: 58, studentsStruggling: 12 },
-        { subject: 'Pharmacology', avgKnowledge: 75, studentsStruggling: 4 },
-      ],
-    };
-  },
+  getClassAnalytics: () => authenticatedFetch<ClassAnalytics>('/teacher/analytics'),
 };
 
-// Student Data Sync API (for future use)
-export const syncAPI = {
-  // Sync subjects to backend
-  syncSubjects: async (subjects: any[]) => {
-    // return authenticatedFetch('/sync/subjects', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ subjects }),
-    // });
-    console.log('Sync subjects to backend:', subjects);
-  },
+// Study data -> SubjectsController, TopicsController, ActivitiesController
+const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) });
 
-  // Sync topics to backend
-  syncTopics: async (topics: any[]) => {
-    // return authenticatedFetch('/sync/topics', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ topics }),
-    // });
-    console.log('Sync topics to backend:', topics);
-  },
-
-  // Sync activities to backend
-  syncActivities: async (activities: any[]) => {
-    // return authenticatedFetch('/sync/activities', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ activities }),
-    // });
-    console.log('Sync activities to backend:', activities);
-  },
-
-  // Fetch user data from backend
-  fetchUserData: async () => {
-    // return authenticatedFetch('/sync/user-data');
-    return {
-      subjects: [],
-      topics: [],
-      activities: [],
-    };
-  },
+export const subjectsAPI = {
+  getAll: async () => (await authenticatedFetch<SubjectDto[]>('/subjects')).map(fromSubjectDto),
+  create: async (subject: Omit<Subject, 'id'>) =>
+    fromSubjectDto(await authenticatedFetch<SubjectDto>('/subjects', json('POST', toSubjectRequest(subject)))),
+  update: async (id: string, subject: Omit<Subject, 'id'>) =>
+    fromSubjectDto(await authenticatedFetch<SubjectDto>(`/subjects/${id}`, json('PUT', toSubjectRequest(subject)))),
+  remove: (id: string) => authenticatedFetch<void>(`/subjects/${id}`, { method: 'DELETE' }),
 };
 
-export default {
-  auth: authAPI,
-  teacher: teacherAPI,
-  sync: syncAPI,
+export const topicsAPI = {
+  getAll: async () => (await authenticatedFetch<TopicDto[]>('/topics')).map(fromTopicDto),
+  create: async (subjectId: string, topic: Partial<Topic>) =>
+    fromTopicDto(
+      await authenticatedFetch<TopicDto>(`/subjects/${subjectId}/topics`, json('POST', toTopicRequest(topic))),
+    ),
+  update: async (id: string, topic: Partial<Topic>) =>
+    fromTopicDto(await authenticatedFetch<TopicDto>(`/topics/${id}`, json('PUT', toTopicRequest(topic)))),
+  remove: (id: string) => authenticatedFetch<void>(`/topics/${id}`, { method: 'DELETE' }),
+};
+
+export const activitiesAPI = {
+  getAll: async () => (await authenticatedFetch<ActivityDto[]>('/activities')).map(fromActivityDto),
+  create: async (activity: Omit<Activity, 'id'>) =>
+    fromActivityDto(await authenticatedFetch<ActivityDto>('/activities', json('POST', toActivityRequest(activity)))),
+  update: async (id: string, activity: Omit<Activity, 'id'>) =>
+    fromActivityDto(
+      await authenticatedFetch<ActivityDto>(`/activities/${id}`, json('PUT', toActivityRequest(activity))),
+    ),
+  setStatus: async (id: string, status: ActivityStatus) =>
+    fromActivityDto(
+      await authenticatedFetch<ActivityDto>(`/activities/${id}/status`, json('PATCH', { status: toBackendStatus(status) })),
+    ),
+  remove: (id: string) => authenticatedFetch<void>(`/activities/${id}`, { method: 'DELETE' }),
+};
+
+// Study planner -> PlanningController (rules: docs/PLANNING.md)
+const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+export const planningAPI = {
+  generate: async (days: number) => {
+    const result = await authenticatedFetch<{ sessions: ActivityDto[]; warnings: PlanningWarningDto[] }>(
+      '/planning/generate',
+      json('POST', { timeZone: browserTimeZone(), days }),
+    );
+    return { sessions: result.sessions.map(fromActivityDto), warnings: result.warnings.map(fromWarningDto) };
+  },
+  getWarnings: async () =>
+    (
+      await authenticatedFetch<PlanningWarningDto[]>(
+        `/planning/warnings?timeZone=${encodeURIComponent(browserTimeZone())}`,
+      )
+    ).map(fromWarningDto),
 };

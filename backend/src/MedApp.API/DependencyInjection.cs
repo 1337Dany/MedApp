@@ -55,7 +55,6 @@ public static class DependencyInjection
         services.AddScoped<IActivityTypeRepository, ActivityTypeRepository>();
         services.AddScoped<IStudyStrategyRepository, StudyStrategyRepository>();
         services.AddScoped<IRecurringOptionsRepository, RecurringOptionsRepository>();
-        services.AddScoped<IOptionsDayOfWeekRepository, OptionsDayOfWeekRepository>();
         services.AddScoped<ITopicRepository, TopicRepository>();
         services.AddScoped<ISubjectRepository, SubjectRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -70,8 +69,9 @@ public static class DependencyInjection
         services.AddScoped<IActivityService, ActivityService>();
         services.AddScoped<IActivityTypeService, ActivityTypeService>();
         services.AddScoped<IStudyStrategyService, StudyStrategyService>();
-        services.AddScoped<IRecurringOptionsService, RecurringOptionsService>();
-        services.AddScoped<IOptionsDayOfWeekService, OptionsDayOfWeekService>();
+        services.AddScoped<IPlanningService, PlanningService>();
+        services.AddScoped<IUserService, UserService>();
+        services.AddScoped<ITeacherAnalyticsService, TeacherAnalyticsService>();
 
         return services;
     }

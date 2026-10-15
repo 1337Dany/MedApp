@@ -62,6 +62,9 @@ ENV ASPNETCORE_URLS=http://+:5000
 EXPOSE 5000
 
 # Copy everything needed to run the app from the "build" stage.
+# Time-zone data for the study planner (plans in the student's local time).
+RUN apk add --no-cache tzdata
+
 COPY --from=build /app .
 
 # Switch to a non-privileged user (defined in the base image) that the app will run under.

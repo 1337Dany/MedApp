@@ -10,7 +10,7 @@ public class Subject
     public User User { get; set; } = null!;
 
     public string Name { get; set; } = null!;
-    public DateOnly ExamDate { get; set; }
+    public DateOnly? ExamDate { get; set; }
 
     public int PlanningMethodId { get; set; }
     public StudyStrategy PlanningMethod { get; set; } = null!;
