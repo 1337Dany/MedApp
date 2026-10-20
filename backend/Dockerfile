@@ -63,7 +63,8 @@ EXPOSE 5000
 
 # Copy everything needed to run the app from the "build" stage.
 # Time-zone data for the study planner (plans in the student's local time).
-RUN apk add --no-cache tzdata
+# krb5-libs: Npgsql probes GSSAPI on connect and logs an error when libgssapi_krb5 is missing.
+RUN apk add --no-cache tzdata krb5-libs
 
 COPY --from=build /app .
 
