@@ -8,6 +8,7 @@ Updated on `feature/planning`, 2026-10-09: Phase 3 done (study planner, spaced r
 Updated on `feature/quality-delivery`, 2026-10-10: Phase 5 done (CI runs tests, type check and build; production compose profile; pinned images; README).
 Updated on `feature/teacher-analytics`, 2026-10-09: Phase 4 done (teacher analytics with consent and minimum group size, profile/consent editing, admin role management).
 Updated on `feature/ui-tests`, 2026-10-19: frontend tests for every button (Vitest component tests with a fake API, Playwright end-to-end tests against the real stack, both in CI), profile API tests; icon-only buttons have accessible names.
+Updated on `feature/alpine-krb5`, 2026-10-15: API image installs `krb5-libs` (Npgsql logged a missing `libgssapi_krb5.so.2` on every connect).
 Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Zustand; Docker Compose; GitHub Action running `dotnet format --verify-no-changes`.
 
 ## Where the project stands
