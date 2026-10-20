@@ -18,6 +18,9 @@ FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 # Placing it here allows the previous steps to be cached across architectures.
 ARG TARGETARCH
 WORKDIR /source
+COPY ["src/MedApp.Models/MedApp.Models.csproj", "src/MedApp.Models/"]
+COPY ["src/MedApp.Services/MedApp.Services.csproj", "src/MedApp.Services/"]
+COPY ["src/MedApp.DAL/MedApp.DAL.csproj", "src/MedApp.DAL/"]
 COPY ["src/MedApp.API/MedApp.API.csproj", "src/MedApp.API/"]
 
 # Build the application.
@@ -59,6 +62,10 @@ ENV ASPNETCORE_URLS=http://+:5000
 EXPOSE 5000
 
 # Copy everything needed to run the app from the "build" stage.
+# Time-zone data for the study planner (plans in the student's local time).
+# krb5-libs: Npgsql probes GSSAPI on connect and logs an error when libgssapi_krb5 is missing.
+RUN apk add --no-cache tzdata krb5-libs
+
 COPY --from=build /app .
 
 # Switch to a non-privileged user (defined in the base image) that the app will run under.

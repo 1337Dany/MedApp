@@ -6,7 +6,7 @@
 
 # Want to help us make this template better? Share your feedback here: https://forms.gle/ybq9Krt8jtBL3iCk7
 
-ARG NODE_VERSION=lts-alpine
+ARG NODE_VERSION=22.23.3-alpine
 
 ################################################################################
 # Use node image for base image for all stages.
@@ -52,7 +52,7 @@ RUN npm run build
 ################################################################################
 # Create a new stage to run the application with minimal runtime dependencies
 # where the necessary files are copied from the build stage.
-FROM nginx:stable-alpine as final
+FROM nginx:1.30.5-alpine as final
 
 # Copying file from build into directory with nginx
 COPY --from=build /usr/src/app/build /usr/share/nginx/html

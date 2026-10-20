@@ -48,6 +48,11 @@ public class UsersConfig : IEntityTypeConfiguration<User>
             .IsRequired();
 
         builder
+            .Property(u => u.TimeZone)
+            .HasMaxLength(64)
+            .IsRequired(false);
+
+        builder
             .Property(u => u.Role)
             .HasDefaultValue(Models.Models.Enums.UserRole.User)
             .IsRequired();

@@ -28,12 +28,13 @@ public class SubjectConfig : IEntityTypeConfiguration<Subject>
 
         builder
             .Property(s => s.ExamDate)
-            .IsRequired();
+            .IsRequired(false);
 
         builder
             .HasOne(s => s.PlanningMethod)
             .WithMany(m => m.Subjects)
-            .HasForeignKey(s => s.PlanningMethodId);
+            .HasForeignKey(s => s.PlanningMethodId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder
             .Property(s => s.Priority)

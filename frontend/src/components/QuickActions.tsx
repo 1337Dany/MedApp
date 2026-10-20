@@ -4,9 +4,11 @@ interface QuickActionsProps {
   onAddSubject: () => void;
   onAddActivity: () => void;
   onViewCalendar: () => void;
+  onPlanWeek: () => void;
+  isPlanning?: boolean;
 }
 
-export function QuickActions({ onAddSubject, onAddActivity, onViewCalendar }: QuickActionsProps) {
+export function QuickActions({ onAddSubject, onAddActivity, onViewCalendar, onPlanWeek, isPlanning }: QuickActionsProps) {
   return (
     <div className="grid grid-cols-2 gap-3">
       <button
@@ -49,14 +51,16 @@ export function QuickActions({ onAddSubject, onAddActivity, onViewCalendar }: Qu
       </button>
 
       <button
-        className="flex items-center gap-3 p-4 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors group"
+        onClick={onPlanWeek}
+        disabled={isPlanning}
+        className="flex items-center gap-3 p-4 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors group disabled:opacity-50"
       >
         <div className="w-10 h-10 bg-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
           <Target className="w-5 h-5 text-white" />
         </div>
         <div className="text-left">
-          <p className="font-medium text-gray-900">Study Session</p>
-          <p className="text-xs text-gray-600">Start studying</p>
+          <p className="font-medium text-gray-900">{isPlanning ? 'Planning...' : 'Plan My Week'}</p>
+          <p className="text-xs text-gray-600">Schedule study sessions</p>
         </div>
       </button>
     </div>
