@@ -48,6 +48,38 @@ Publishes only the web app (nginx, `FRONTEND_PORT`, default 80); the API and Pos
 compose network, and the API trusts forwarded client IPs from that network only. Put TLS in front of nginx.
 Set `DB_MIGRATE_ON_STARTUP=true` only for a deploy that should migrate, after a `pg_dump`.
 
+### Continuous deployment
+
+Every push to `main` (a merged PR) is deployed by `.github/workflows/deploy.yml`. The job runs on a
+self-hosted GitHub Actions runner on the server (label `medapp-prod`), so the server needs no open SSH port:
+
+1. the server's own clone (`/srv/diploma/medapp-prod`) is moved to the pushed commit (`git reset --hard`);
+2. `infra/scripts/deploy.sh` dumps the database to `backups/` (last 14 kept), rebuilds and restarts the
+   production profile as compose project `medapp-prod` with migrations on, waits until the API answers
+   through nginx and fails the job with the API logs if it does not.
+
+The clone keeps everything that is not in git: the production `.env` (`FRONTEND_PORT=80`, own
+`POSTGRES_PASSWORD` and `JWT_KEY`), `postgres/data` and `backups/`. A deploy can also be started from the
+Actions tab (Deploy → Run workflow) or on the server with `infra/scripts/deploy.sh`. To roll back, run the
+workflow on an older commit or `git -C /srv/diploma/medapp-prod reset --hard <sha>` followed by the script;
+restore a dump with
+`gunzip -c backups/<file>.sql.gz | docker compose -p medapp-prod exec -T postgresql psql -U <user> -d <db>`
+(into an empty database).
+
+Setting up a server:
+
+```bash
+git clone https://github.com/1337Dany/MedApp.git /srv/diploma/medapp-prod
+cp /srv/diploma/medapp-prod/.env.example /srv/diploma/medapp-prod/.env   # production values, chmod 600
+# runner: Settings → Actions → Runners → New self-hosted runner (Linux x64), into its own directory, then
+./config.sh --url https://github.com/1337Dany/MedApp --token <token> --labels medapp-prod
+sudo ./svc.sh install "$USER" && sudo ./svc.sh start                       # runs as a service, survives reboots
+```
+
+The runner user needs access to Docker. The repository is public, so in Settings → Actions → General set
+"Fork pull request workflows from outside collaborators" to "Require approval for all external contributors":
+otherwise a pull request from a fork could change a workflow to run on the server's runner.
+
 ## Environment variables (`.env`)
 
 | Variable | Purpose |

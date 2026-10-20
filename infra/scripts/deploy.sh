@@ -5,6 +5,8 @@
 #   3. waits until the API answers through nginx, otherwise prints the logs and fails.
 # Needs a .env next to docker-compose.yml (see .env.example) with FRONTEND_PORT set to the public port.
 set -eu
+# Dumps and anything else written here are for the owner only.
+umask 077
 
 cd "$(dirname "$0")/../.."
 PROJECT=${COMPOSE_PROJECT_NAME:-medapp-prod}
