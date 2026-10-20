@@ -176,18 +176,21 @@ export function SubjectsView() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={(e) => handleAddTopic(subject.id, e)}
+                        aria-label={`Add topic to ${subject.title}`}
                         className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
                       >
                         <Plus className="w-4 h-4" />
                       </button>
                       <button
                         onClick={(e) => handleEditSubject(subject, e)}
+                        aria-label={`Edit ${subject.title}`}
                         className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={(e) => handleDeleteSubject(subject.id, e)}
+                        aria-label={`Delete ${subject.title}`}
                         className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -231,12 +234,14 @@ export function SubjectsView() {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={(e) => handleEditTopic(topic, e)}
+                                aria-label={`Edit topic ${topic.title}`}
                                 className="p-1.5 text-gray-600 hover:bg-gray-100 rounded"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={(e) => handleDeleteTopic(topic.id, e)}
+                                aria-label={`Delete topic ${topic.title}`}
                                 className="p-1.5 text-red-600 hover:bg-red-50 rounded"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />

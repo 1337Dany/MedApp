@@ -1,0 +1,41 @@
+# Throwaway stack for the Playwright end-to-end tests (frontend/e2e/run.sh). It builds the same images as
+# docker-compose.yml but keeps the database in memory, takes per-run secrets from run.sh (E2E_DB_PASSWORD,
+# E2E_JWT_KEY) and lifts the login rate limit because every test signs in. No container names or host ports
+# are fixed, so it can run next to the dev stack.
+name: medapp-e2e
+
+services:
+  api:
+    build: ../../backend
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Postgres: Host=postgresql;Port=5432;Database=medapp;Username=medapp;Password=${E2E_DB_PASSWORD:?run e2e/run.sh}
+      Database__MigrateOnStartup: "true"
+      Jwt__Issuer: MedApp
+      Jwt__Audience: MedApp.Client
+      Jwt__Key: ${E2E_JWT_KEY:?run e2e/run.sh}
+      RateLimiting__AuthPermitLimit: "100000"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+
+  postgresql:
+    image: postgres:17.11
+    environment:
+      POSTGRES_DB: medapp
+      POSTGRES_USER: medapp
+      POSTGRES_PASSWORD: ${E2E_DB_PASSWORD:?run e2e/run.sh}
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medapp -d medapp"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  frontend:
+    build: ..
+    ports:
+      - ${E2E_PORT:-8088}:80
+    depends_on:
+      - api
