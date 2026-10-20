@@ -59,7 +59,7 @@ export function TopicModal({ topic, subjectId, onClose }: TopicModalProps) {
           <h2 className="text-xl font-semibold text-gray-900">
             {topic ? 'Edit Topic' : 'New Topic'}
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>

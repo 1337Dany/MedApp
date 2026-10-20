@@ -39,7 +39,8 @@ Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Z
   - `GET /api/users`, `PUT /api/users/{id}/role` (admins only; an admin cannot change their own role).
   - Frontend: teacher dashboard on real data with insights derived from it, "not enough data" state; Profile Settings modal with the consent switch; admin Users view; staff no longer see the empty student views.
   - `infra/scripts/Diploma_DB_seed.sql` adds a demo teacher and admin.
-- **Tests**: `backend/tests/MedApp.Services.Tests` (planner unit tests, no Docker) and `backend/tests/MedApp.API.Tests` (xUnit, `WebApplicationFactory`, Testcontainers Postgres; needs Docker). Auth flow incl. refresh replay, ownership isolation between two users, CRUD, cascades, recurrence, validation.
+- **Tests**: `backend/tests/MedApp.Services.Tests` (planner unit tests, no Docker) and `backend/tests/MedApp.API.Tests` (xUnit, `WebApplicationFactory`, Testcontainers Postgres; needs Docker). Auth flow incl. refresh replay, ownership isolation between two users, CRUD, cascades, recurrence, validation, profile updates.
+- **Frontend tests** (`feature/ui-tests`): `npm test` runs 103 Vitest tests: unit tests (mappers, recurrence, HTTP client refresh) and component tests that render the whole app in jsdom and click every button of every screen against an in-memory fake API (`src/test/fakeApi.ts`, MSW). `frontend/e2e/run.sh` runs 20 Playwright tests in Chromium against a throwaway compose stack with the real API and database. Icon-only buttons got `aria-label`s (and calendar slots a `data-testid`) so tests and screen readers can address them.
 - **Frontend UI**: every screen built, running on mock data (unchanged since the last snapshot).
 - **Infra**: compose has `api`, `postgres:17` (with `pg_isready` healthcheck), `frontend`; API container on 5000, nginx proxies `/api/` to `api:5000`. `.env.example` documents every variable.
 

@@ -46,7 +46,7 @@ export function ProfileModal({ onClose }: ProfileModalProps) {
       <div className="bg-white rounded-lg max-w-md w-full">
         <div className="border-b border-gray-200 p-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-gray-900">Profile Settings</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>

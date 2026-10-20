@@ -120,8 +120,21 @@ npm run dev
 ```bash
 dotnet test MedApp.sln          # planner/analytics unit tests + API integration tests (needs Docker: Testcontainers Postgres)
 dotnet format --verify-no-changes
-cd frontend && npm run typecheck && npm run build
+cd frontend && npm run typecheck && npm test && npm run build
+frontend/e2e/run.sh             # end-to-end tests in Chromium against the real stack (needs Docker)
 ```
+
+Frontend tests come in two layers:
+
+- `npm test` (Vitest, `src/**/*.test.ts(x)`): unit tests for the mappers, recurrence and the HTTP client, and
+  component tests that render the whole app in jsdom and click every button of every screen. Requests go through
+  the real store, API client and mappers to an in-memory fake of the API (`src/test/fakeApi.ts`, MSW), which
+  records what each button sent and can inject errors.
+- `e2e/run.sh` (Playwright, `e2e/*.spec.ts`): builds a throwaway stack (`e2e/docker-compose.e2e.yml`, database
+  in memory, no fixed container names or ports besides `E2E_PORT`, default 8088), loads the demo teacher and admin,
+  creates a class of consenting students (`e2e/global-setup.ts`) and runs the specs in the official Playwright
+  image. Extra arguments go to `playwright test` (`frontend/e2e/run.sh e2e/auth.spec.ts`); `KEEP_STACK=1` leaves
+  the stack running.
 
 CI (`.github/workflows`) runs all of these on pull requests.
 
@@ -136,6 +149,7 @@ backend/
   src/MedApp.DAL        EF Core DbContext, entity configurations, migrations, repositories
   src/MedApp.API        controllers, DI, authentication, rate limiting
   tests/                MedApp.Services.Tests (unit), MedApp.API.Tests (integration)
+frontend/src/**/*.test.*  Vitest unit and component tests; frontend/e2e/ Playwright end-to-end tests
 docs/PLANNING.md        planning rules
 infra/scripts/          optional demo seed SQL
 ```
