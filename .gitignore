@@ -861,3 +861,7 @@ FodyWeavers.xsd
 
 # postgres db
 postgres/data
+
+# Playwright
+frontend/test-results/
+frontend/playwright-report/

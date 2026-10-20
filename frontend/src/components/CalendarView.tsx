@@ -123,12 +123,14 @@ export function CalendarView() {
           </button>
           <button
             onClick={previousWeek}
+            aria-label="Previous week"
             className="p-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
           <button
             onClick={nextWeek}
+            aria-label="Next week"
             className="p-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             <ChevronRight className="w-5 h-5" />
@@ -182,6 +184,7 @@ export function CalendarView() {
                         key={dayIndex}
                         className="relative border-l border-gray-200 min-h-[60px] hover:bg-gray-50 cursor-pointer group"
                         onClick={() => handleSlotClick(dayIndex, hour)}
+                        data-testid={`slot-${dayIndex}-${hour}`}
                       >
                         {slotBlocks.map(({ occurrence, start, top, height }) => {
                           const { activity } = occurrence;

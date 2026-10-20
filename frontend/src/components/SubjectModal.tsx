@@ -64,7 +64,7 @@ export function SubjectModal({ subject, onClose }: SubjectModalProps) {
           <h2 className="text-xl font-semibold text-gray-900">
             {subject ? 'Edit Subject' : 'New Subject'}
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -170,6 +170,8 @@ export function SubjectModal({ subject, onClose }: SubjectModalProps) {
                   key={color}
                   type="button"
                   onClick={() => setFormData({ ...formData, color })}
+                  aria-label={`Color ${color}`}
+                  aria-pressed={formData.color === color}
                   className={`w-10 h-10 rounded-lg ${
                     formData.color === color ? 'ring-2 ring-offset-2 ring-blue-500' : ''
                   }`}

@@ -6,6 +6,7 @@ import { parseDateOnly, toDateInputValue, toTimeInputValue } from '../utils/date
 
 // Activity types that can belong to a subject.
 const SUBJECT_TYPES: ActivityType[] = ['studying', 'class'];
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 interface ActivityModalProps {
   activity: Activity | null;
@@ -124,6 +125,7 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
           </h2>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="p-2 hover:bg-gray-100 rounded-lg"
           >
             <X className="w-5 h-5" />
@@ -313,6 +315,8 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
                           key={index}
                           type="button"
                           onClick={() => toggleRecurrenceDay(index)}
+                          aria-label={DAY_NAMES[index]}
+                          aria-pressed={formData.recurrenceDays.includes(index)}
                           className={`w-10 h-10 rounded-full text-sm font-medium ${
                             formData.recurrenceDays.includes(index)
                               ? 'bg-blue-600 text-white'
