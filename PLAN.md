@@ -7,7 +7,7 @@ Updated on `feature/core-crud`, 2026-10-09: Phase 2 done (CRUD with ownership ch
 Updated on `feature/planning`, 2026-10-09: Phase 3 done (study planner, spaced repetition, overload warnings; rules in `docs/PLANNING.md`).
 Updated on `feature/quality-delivery`, 2026-10-10: Phase 5 done (CI runs tests, type check and build; production compose profile; pinned images; README).
 Updated on `feature/teacher-analytics`, 2026-10-09: Phase 4 done (teacher analytics with consent and minimum group size, profile/consent editing, admin role management).
-Updated on `feature/ui-tests`, 2026-10-19: frontend tests for every button (Vitest component tests with a fake API, Playwright end-to-end tests against the real stack, both in CI), profile API tests; icon-only buttons have accessible names.
+Updated on `feature/cd`, 2026-10-20: continuous deployment of `main` through a self-hosted runner on the server (`.github/workflows/deploy.yml`, `infra/scripts/deploy.sh`); fixed container names removed from `docker-compose.yml`.
 Updated on `feature/alpine-krb5`, 2026-10-15: API image installs `krb5-libs` (Npgsql logged a missing `libgssapi_krb5.so.2` on every connect).
 Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Zustand; Docker Compose; GitHub Action running `dotnet format --verify-no-changes`.
 
@@ -138,7 +138,7 @@ Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Z
 ## Decisions taken
 4. Roles: `User` (student, the default), `Teacher`, `Admin`. Registration always creates a student; teacher and admin accounts are granted by an admin (`PUT /api/users/{id}/role`, Users view), the first admin via SQL (`UPDATE "Users" SET "Role" = 1 WHERE "Email" = ...`). Teachers and admins get the class views in the UI.
 5. Enums travel as camelCase strings in JSON; the database keeps integers.
-1. Migrations on start are opt-in: `DB_MIGRATE_ON_STARTUP=true` for local dev; in production set it only for a deploy that should migrate, after a `pg_dump`. Review the migration `.cs` (`Up()`) in the PR instead of generating SQL; EF warns at scaffold time when an operation may lose data. Before the first production run, check `__EFMigrationsHistory` exists (otherwise baseline it) and whether the placeholder admin `8898cf29-…` that `SeedLookupsRemoveDevUser` deletes owns any data (cascades).
+1. Migrations on start are opt-in: `DB_MIGRATE_ON_STARTUP=true` for local dev; in production set it only for a deploy that should migrate, after a `pg_dump`. The CD script (`infra/scripts/deploy.sh`) does exactly that on every deploy: dump first, then start with migrations on. Review the migration `.cs` (`Up()`) in the PR instead of generating SQL; EF warns at scaffold time when an operation may lose data. Before the first production run, check `__EFMigrationsHistory` exists (otherwise baseline it) and whether the placeholder admin `8898cf29-…` that `SeedLookupsRemoveDevUser` deletes owns any data (cascades).
 2. Migrations own the schema; `infra/scripts/Diploma_DB_seed.sql` is optional demo data only.
 3. `appsettings.json` / `appsettings.Development.json` are committed without secrets.
 

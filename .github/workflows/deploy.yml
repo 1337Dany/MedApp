@@ -1,0 +1,35 @@
+name: Deploy
+
+# Every push to main (a merged PR) is deployed to the production server by the self-hosted runner installed
+# there (label medapp-prod). The server keeps its own clone in DEPLOY_DIR with the production .env, the
+# database files and the backups; this job moves that clone to the pushed commit and runs
+# infra/scripts/deploy.sh. Setup steps are in README.md (Continuous deployment).
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# One deploy at a time, in push order.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [ self-hosted, medapp-prod ]
+    environment: production
+    env:
+      DEPLOY_DIR: /srv/diploma/medapp-prod
+
+    steps:
+      - name: Update the server checkout
+        run: |
+          git -C "$DEPLOY_DIR" fetch --prune origin main
+          git -C "$DEPLOY_DIR" reset --hard "$GITHUB_SHA"
+          git -C "$DEPLOY_DIR" log -1 --oneline
+
+      - name: Deploy
+        run: "$DEPLOY_DIR/infra/scripts/deploy.sh"
