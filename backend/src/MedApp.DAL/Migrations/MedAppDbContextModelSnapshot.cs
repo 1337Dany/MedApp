@@ -40,6 +40,9 @@ namespace MedApp.DAL.Migrations
                     b.Property<int>("DurationMinutes")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("HistoryRecordedUntil")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("IsAutoPlanned")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -94,6 +97,53 @@ namespace MedApp.DAL.Migrations
                     b.HasIndex("UserId", "StartTime");
 
                     b.ToTable("Activities");
+                });
+
+            modelBuilder.Entity("MedApp.Models.Models.ActivityOccurrence", b =>
+                {
+                    b.Property<Guid>("ActivityOccurrenceId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid?>("ActivityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ActivityTypeId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("SubjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("ActivityOccurrenceId");
+
+                    b.HasIndex("ActivityTypeId");
+
+                    b.HasIndex("SubjectId");
+
+                    b.HasIndex("ActivityId", "StartTime")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "StartTime");
+
+                    b.ToTable("ActivityOccurrences");
                 });
 
             modelBuilder.Entity("MedApp.Models.Models.ActivityType", b =>
@@ -437,6 +487,39 @@ namespace MedApp.DAL.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("MedApp.Models.Models.ActivityOccurrence", b =>
+                {
+                    b.HasOne("MedApp.Models.Models.Activity", "Activity")
+                        .WithMany("Occurrences")
+                        .HasForeignKey("ActivityId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MedApp.Models.Models.ActivityType", "ActivityType")
+                        .WithMany()
+                        .HasForeignKey("ActivityTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MedApp.Models.Models.Subject", "Subject")
+                        .WithMany()
+                        .HasForeignKey("SubjectId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MedApp.Models.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Activity");
+
+                    b.Navigation("ActivityType");
+
+                    b.Navigation("Subject");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("MedApp.Models.Models.OptionsDayOfWeek", b =>
                 {
                     b.HasOne("MedApp.Models.Models.RecurringOptions", "RecurringOptions")
@@ -487,6 +570,11 @@ namespace MedApp.DAL.Migrations
                         .IsRequired();
 
                     b.Navigation("Subject");
+                });
+
+            modelBuilder.Entity("MedApp.Models.Models.Activity", b =>
+                {
+                    b.Navigation("Occurrences");
                 });
 
             modelBuilder.Entity("MedApp.Models.Models.ActivityType", b =>

@@ -89,7 +89,17 @@ public class PlanningService : IPlanningService
         CancellationToken ct = default)
     {
         var user = await _users.GetByIdAsync(userId, ct);
-        var zone = TimeZones.Find(timeZone) ?? TimeZones.Find(user?.TimeZone) ?? TimeZoneInfo.Utc;
+        var requested = TimeZones.Find(timeZone);
+
+        // The app asks for warnings on every load, so the stored zone (used to record recurring activities into the
+        // history) follows the browser.
+        if (requested is not null && user is not null && user.TimeZone != timeZone)
+        {
+            user.TimeZone = timeZone;
+            await _uow.SaveChangesAsync(ct);
+        }
+
+        var zone = requested ?? TimeZones.Find(user?.TimeZone) ?? TimeZoneInfo.Utc;
 
         var context = await BuildContextAsync(userId, zone, days ?? PlanningRules.DefaultHorizonDays, ct);
 

@@ -108,8 +108,8 @@ public class ActivitiesController : ApiControllerBase
             return invalid;
         }
 
-        var activity = await _activities.UpdateStatusAsync(id, userId, request.Status, ct);
-        return activity is null ? NotFound() : Ok(activity);
+        var result = await _activities.UpdateStatusAsync(id, userId, request.Status, request.OccurrenceStart, ct);
+        return result.Succeeded ? Ok(result.Value) : MapFailure(result);
     }
 
     [HttpDelete("{id:guid}")]

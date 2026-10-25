@@ -50,6 +50,18 @@ export interface Subject {
   color: string;
 }
 
+// One concrete occurrence from GET /api/occurrences: recorded history before now, the timetable after it.
+export interface OccurrenceRecord {
+  activityId?: string; // missing once the activity was deleted
+  subjectId?: string;
+  title: string;
+  type: ActivityType;
+  start: Date;
+  end: Date;
+  duration: number; // minutes
+  status: ActivityStatus;
+}
+
 export interface OverloadWarning {
   date: Date;
   severity: 'low' | 'medium' | 'high';

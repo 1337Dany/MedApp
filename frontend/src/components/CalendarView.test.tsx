@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { fakeApi, FakeUser } from '../test/fakeApi';
 import { field, findModal, nav, renderApp } from '../test/render';
 import { addDays, startOfDay, toDateInputValue } from '../utils/dates';
@@ -100,5 +100,34 @@ describe('CalendarView', () => {
     await events.click(screen.getByRole('button', { name: 'Next week' }));
 
     expect(within(screen.getByTestId('slot-5-8')).getByText('Next week task')).toBeInTheDocument();
+  });
+
+  it('marks one occurrence of a recurring activity without changing the others', async () => {
+    const sunday = thisSunday();
+    const { events } = await openCalendar((user) => {
+      fakeApi.addActivity(user.id, {
+        title: 'Lecture',
+        activityTypeId: 2,
+        startTime: atLocal(addDays(sunday, -14), 9),
+        isRecurring: true,
+        recurrence: { frequency: 'weekly', daysOfWeek: ['monday', 'thursday'], until: null },
+      });
+    });
+
+    await events.click(within(screen.getByTestId('slot-1-9')).getByText('Lecture'));
+    const modal = await findModal('Edit Activity');
+    expect(within(modal).queryByText('Status', { selector: 'label' })).not.toBeInTheDocument();
+    await events.click(within(modal).getByRole('button', { name: 'Done' }));
+
+    await waitFor(() => expect(within(modal).getByRole('button', { name: 'Done' })).toHaveAttribute('aria-pressed', 'true'));
+    const [request] = fakeApi.writes();
+    expect(request).toMatchObject({
+      method: 'PATCH',
+      body: { status: 'done', occurrenceStart: atLocal(addDays(sunday, 1), 9) },
+    });
+
+    await events.click(within(modal).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.getByTestId('slot-1-9')).toHaveTextContent('Done'));
+    expect(screen.getByTestId('slot-4-9')).not.toHaveTextContent('Done');
   });
 });

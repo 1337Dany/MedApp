@@ -2,6 +2,7 @@
 using MedApp.Models.Models;
 using MedApp.Models.Models.Enums;
 using MedApp.Services.DTOs.Activities;
+using MedApp.Services.History;
 using MedApp.Services.Planning;
 using MedApp.Services.Repositories;
 
@@ -16,6 +17,7 @@ public class ActivityService : IActivityService
     private readonly IUnitOfWork _uow;
     private readonly IMapper _mapper;
     private readonly IPlanningService _planning;
+    private readonly IActivityHistoryService _history;
 
     public ActivityService(
         IActivityRepository repository,
@@ -24,7 +26,8 @@ public class ActivityService : IActivityService
         ITopicRepository topics,
         IUnitOfWork uow,
         IMapper mapper,
-        IPlanningService planning)
+        IPlanningService planning,
+        IActivityHistoryService history)
     {
         _repository = repository;
         _recurringOptions = recurringOptions;
@@ -33,6 +36,7 @@ public class ActivityService : IActivityService
         _uow = uow;
         _mapper = mapper;
         _planning = planning;
+        _history = history;
     }
 
     public async Task<IEnumerable<ActivityDto>> GetAllAsync(Guid userId, DateTime? from = null, DateTime? to = null,
@@ -82,6 +86,14 @@ public class ActivityService : IActivityService
 
         var before = (activity.StartTime, activity.DurationMinutes, activity.SubjectId, activity.TopicId, activity.Status);
 
+        // The history keeps what happened until now; only a change of when a series occurs drops future marks.
+        await _history.RecordPastAsync(userId, ct);
+        var staysSeries = request.IsRecurring && request.Recurrence is not null;
+        if (!OccurrenceExpander.IsSeries(activity) || !staysSeries || !SamePattern(activity, request))
+        {
+            await _history.ReleaseAsync(activity, staysSeries, ct);
+        }
+
         _mapper.Map(request, activity);
         await ApplyAndCleanUpAsync(activity, request, references.Value, ct);
 
@@ -96,7 +108,7 @@ public class ActivityService : IActivityService
         var statusChanged = activity.Status != before.Status;
         if (statusChanged)
         {
-            await OnStatusChangedAsync(activity, userId, ct);
+            await OnStatusChangedAsync(activity.TopicId, activity.Status, userId, ct);
         }
 
         await _uow.SaveChangesAsync(ct);
@@ -107,24 +119,55 @@ public class ActivityService : IActivityService
         return ServiceResult<ActivityDto>.Success(_mapper.Map<ActivityDto>(activity));
     }
 
-    public async Task<ActivityDto?> UpdateStatusAsync(Guid activityId, Guid userId, Status status, CancellationToken ct = default)
+    public async Task<ServiceResult<ActivityDto>> UpdateStatusAsync(Guid activityId, Guid userId, Status status,
+        DateTime? occurrenceStart = null, CancellationToken ct = default)
     {
         var activity = await _repository.GetByIdAsync(activityId, userId, ct);
         if (activity is null)
         {
-            return null;
+            return ServiceResult<ActivityDto>.Failure(ServiceError.NotFound, "Activity not found.");
+        }
+
+        // A series is marked per occurrence; its own status stays what it was.
+        if (occurrenceStart is not null && OccurrenceExpander.IsSeries(activity))
+        {
+            await _history.RecordPastAsync(userId, ct);
+            var previous = await _history.SetOccurrenceStatusAsync(activity, occurrenceStart.Value, status, ct);
+            if (previous is null)
+            {
+                return ServiceResult<ActivityDto>.Failure(ServiceError.InvalidReference,
+                    "The activity has no occurrence at this time.");
+            }
+
+            if (previous != status)
+            {
+                await OnStatusChangedAsync(activity.TopicId, status, userId, ct);
+            }
+
+            await _uow.SaveChangesAsync(ct);
+            if (previous != status)
+            {
+                await _planning.ReplanIfActiveAsync(userId, ct);
+            }
+            return ServiceResult<ActivityDto>.Success(_mapper.Map<ActivityDto>(activity));
         }
 
         if (activity.Status == status)
         {
-            return _mapper.Map<ActivityDto>(activity);
+            return ServiceResult<ActivityDto>.Success(_mapper.Map<ActivityDto>(activity));
         }
 
+        // A one-off activity is recorded again with its new status.
+        await _history.RecordPastAsync(userId, ct);
+        if (!OccurrenceExpander.IsSeries(activity))
+        {
+            await _history.ReleaseAsync(activity, staysSeries: false, ct);
+        }
         activity.Status = status;
-        await OnStatusChangedAsync(activity, userId, ct);
+        await OnStatusChangedAsync(activity.TopicId, activity.Status, userId, ct);
         await _uow.SaveChangesAsync(ct);
         await _planning.ReplanIfActiveAsync(userId, ct);
-        return _mapper.Map<ActivityDto>(activity);
+        return ServiceResult<ActivityDto>.Success(_mapper.Map<ActivityDto>(activity));
     }
 
     public async Task<bool> DeleteAsync(Guid activityId, Guid userId, CancellationToken ct = default)
@@ -134,6 +177,10 @@ public class ActivityService : IActivityService
         {
             return false;
         }
+
+        // Past occurrences of a series stay in the history; a one-off activity is removed from it.
+        await _history.RecordPastAsync(userId, ct);
+        await _history.ReleaseAsync(activity, staysSeries: false, ct);
 
         if (activity.RecurringOptions is not null)
         {
@@ -147,20 +194,20 @@ public class ActivityService : IActivityService
 
     // A finished session on a topic is a review with the topic's current rating; a partial one only
     // counts as studied (docs/PLANNING.md, "Spaced repetition").
-    private async Task OnStatusChangedAsync(Activity activity, Guid userId, CancellationToken ct)
+    private async Task OnStatusChangedAsync(Guid? topicId, Status status, Guid userId, CancellationToken ct)
     {
-        if (activity.TopicId is null || activity.Status is not (Status.Done or Status.PartiallyDone))
+        if (topicId is null || status is not (Status.Done or Status.PartiallyDone))
         {
             return;
         }
 
-        var topic = await _topics.GetByIdAsync(activity.TopicId.Value, userId, ct);
+        var topic = await _topics.GetByIdAsync(topicId.Value, userId, ct);
         if (topic is null)
         {
             return;
         }
 
-        if (activity.Status == Status.Done)
+        if (status == Status.Done)
         {
             SpacedRepetition.Review(topic, topic.Feedback, DateTime.UtcNow);
         }
@@ -168,6 +215,18 @@ public class ActivityService : IActivityService
         {
             topic.LastStudied = DateTime.UtcNow;
         }
+    }
+
+    // Whether the series keeps occurring at the same times after the request.
+    private static bool SamePattern(Activity series, ActivityRequest request)
+    {
+        var options = series.RecurringOptions!;
+        var recurrence = request.Recurrence!;
+        var days = recurrence.Frequency == Frequency.Weekly ? recurrence.DaysOfWeek.ToHashSet() : new HashSet<DayOfWeekEnum>();
+        return series.StartTime == ToUtc(request.StartTime) &&
+               options.Frequency == recurrence.Frequency &&
+               options.Until == recurrence.Until &&
+               days.SetEquals(options.DaysOfWeek.Select(d => d.DayOfWeek));
     }
 
     // Subject and topic must belong to the caller; a topic implies its subject.

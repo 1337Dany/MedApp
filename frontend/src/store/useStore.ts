@@ -27,6 +27,8 @@ interface AppState {
   addActivity: (activity: Omit<Activity, 'id'>) => Promise<Activity>;
   updateActivity: (id: string, updates: Partial<Activity>) => Promise<Activity>;
   setActivityStatus: (id: string, status: ActivityStatus) => Promise<Activity>;
+  // Marks one occurrence of a recurring activity; views re-read the occurrences when activities change.
+  setOccurrenceStatus: (id: string, start: Date, status: ActivityStatus) => Promise<void>;
   deleteActivity: (id: string) => Promise<void>;
 
   // Subject actions
@@ -122,6 +124,11 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({ activities: replace(state.activities, updated) }));
     void get().refreshDerived();
     return updated;
+  },
+
+  setOccurrenceStatus: async (id, start, status) => {
+    await activitiesAPI.setStatus(id, status, start);
+    await get().refreshDerived();
   },
 
   deleteActivity: async (id) => {

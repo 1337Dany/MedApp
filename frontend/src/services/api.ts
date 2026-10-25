@@ -3,10 +3,12 @@ import { Activity, ActivityStatus, Subject, Topic } from '../types';
 import { authenticatedFetch, publicFetch } from './http';
 import {
   ActivityDto,
+  OccurrenceDto,
   PlanningWarningDto,
   SubjectDto,
   TopicDto,
   fromActivityDto,
+  fromOccurrenceDto,
   fromWarningDto,
   fromSubjectDto,
   fromTopicDto,
@@ -141,15 +143,30 @@ export const activitiesAPI = {
     fromActivityDto(
       await authenticatedFetch<ActivityDto>(`/activities/${id}`, json('PUT', toActivityRequest(activity))),
     ),
-  setStatus: async (id: string, status: ActivityStatus) =>
+  // With occurrenceStart, a recurring activity gets the status for that one occurrence only.
+  setStatus: async (id: string, status: ActivityStatus, occurrenceStart?: Date) =>
     fromActivityDto(
-      await authenticatedFetch<ActivityDto>(`/activities/${id}/status`, json('PATCH', { status: toBackendStatus(status) })),
+      await authenticatedFetch<ActivityDto>(
+        `/activities/${id}/status`,
+        json('PATCH', { status: toBackendStatus(status), occurrenceStart: occurrenceStart?.toISOString() ?? null }),
+      ),
     ),
   remove: (id: string) => authenticatedFetch<void>(`/activities/${id}`, { method: 'DELETE' }),
 };
 
 // Study planner -> PlanningController (rules: docs/PLANNING.md)
 const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// Occurrence history -> OccurrencesController (rules: docs/ANALYTICS.md)
+export const occurrencesAPI = {
+  get: async (from: Date, to: Date) =>
+    (
+      await authenticatedFetch<OccurrenceDto[]>(
+        `/occurrences?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}` +
+          `&timeZone=${encodeURIComponent(browserTimeZone())}`,
+      )
+    ).map(fromOccurrenceDto),
+};
 
 export const planningAPI = {
   generate: async (days: number) => {

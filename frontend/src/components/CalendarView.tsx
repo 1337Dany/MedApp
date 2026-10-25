@@ -1,19 +1,39 @@
 import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { Activity } from '../types';
+import { Activity, ActivityStatus, ActivityType } from '../types';
 import { ActivityModal } from './ActivityModal';
 import { addDays, startOfDay } from '../utils/dates';
-import { expandOccurrences, Occurrence } from '../utils/recurrence';
+import { expandOccurrences } from '../utils/recurrence';
+import { useOccurrences } from '../hooks/useOccurrences';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const HOUR_HEIGHT_PX = 60; // matches min-h-[60px] of an hour cell
+const STATUS_LABELS: Record<ActivityStatus, string> = {
+  scheduled: '',
+  done: 'Done',
+  partial: 'Partly done',
+  skipped: 'Skipped',
+};
+
+// One block on the calendar. `activity` is missing for history of an activity that has been deleted.
+interface CalendarItem {
+  key: string;
+  title: string;
+  type: ActivityType;
+  subjectId?: string;
+  start: Date;
+  end: Date;
+  status: ActivityStatus;
+  activity?: Activity;
+}
 
 export function CalendarView() {
   const { activities, subjects } = useStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [selectedOccurrence, setSelectedOccurrence] = useState<{ start: Date; status: ActivityStatus } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newActivitySlot, setNewActivitySlot] = useState<{ day: number; hour: number } | null>(null);
 
@@ -28,11 +48,42 @@ export function CalendarView() {
     });
   }, [weekStart]);
 
-  // Recurring series are expanded into their occurrences in this week.
-  const weekOccurrences = useMemo(
-    () => expandOccurrences(activities, weekStart, addDays(weekStart, 7)),
-    [activities, weekStart],
-  );
+  // From the day before, so an occurrence that continues past midnight into the week is drawn.
+  const { occurrences: history } = useOccurrences(addDays(weekStart, -1), addDays(weekStart, 7));
+
+  // What has started comes from the history, which keeps past weeks as they were when the schedule changes.
+  // The rest is the current schedule (recurring series expanded), with the marks of single occurrences.
+  const weekOccurrences = useMemo((): CalendarItem[] => {
+    const now = new Date();
+    const marks = new Map((history ?? []).map((o) => [`${o.activityId}|${o.start.getTime()}`, o.status]));
+    const live = expandOccurrences(activities, weekStart, addDays(weekStart, 7))
+      .filter((o) => !history || o.start >= now)
+      .map(({ activity, start, end }) => ({
+        key: `${activity.id}-${start.getTime()}`,
+        title: activity.title,
+        type: activity.type,
+        subjectId: activity.subjectId,
+        start,
+        end,
+        status:
+          marks.get(`${activity.id}|${start.getTime()}`) ??
+          (activity.recurring ? (activity.status === 'skipped' ? 'skipped' : 'scheduled') : activity.status),
+        activity,
+      }));
+    const past = (history ?? [])
+      .filter((o) => o.start < now)
+      .map((o, i) => ({
+        key: `${o.activityId ?? `deleted-${i}`}-${o.start.getTime()}`,
+        title: o.title,
+        type: o.type,
+        subjectId: o.subjectId,
+        start: o.start,
+        end: o.end,
+        status: o.status,
+        activity: activities.find((a) => a.id === o.activityId),
+      }));
+    return [...past, ...live];
+  }, [activities, history, weekStart]);
 
   // Each occurrence is drawn once per day, in the hour cell where it starts on that day
   // (00:00 when it continues from the previous day), as tall as its duration within the day.
@@ -40,7 +91,7 @@ export function CalendarView() {
     const dayStart = weekDays[dayIndex];
     const dayEnd = addDays(dayStart, 1);
 
-    return weekOccurrences.flatMap((occurrence: Occurrence) => {
+    return weekOccurrences.flatMap((occurrence) => {
       const start = occurrence.start > dayStart ? occurrence.start : dayStart;
       const end = occurrence.end < dayEnd ? occurrence.end : dayEnd;
       if (start >= end || start.getHours() !== hour || start.getDate() !== dayStart.getDate()) return [];
@@ -72,19 +123,23 @@ export function CalendarView() {
     
     setNewActivitySlot({ day: dayIndex, hour });
     setSelectedActivity(null);
+    setSelectedOccurrence(null);
     setIsModalOpen(true);
   };
 
-  const handleActivityClick = (activity: Activity, e: React.MouseEvent) => {
+  // A block of a deleted activity is history only.
+  const handleActivityClick = (item: CalendarItem, e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedActivity(activity);
+    if (!item.activity) return;
+    setSelectedActivity(item.activity);
+    setSelectedOccurrence({ start: item.start, status: item.status });
     setNewActivitySlot(null);
     setIsModalOpen(true);
   };
 
-  const getActivityColor = (activity: Activity) => {
-    if (activity.subjectId) {
-      const subject = subjects.find((s) => s.id === activity.subjectId);
+  const getActivityColor = (item: CalendarItem) => {
+    if (item.subjectId) {
+      const subject = subjects.find((s) => s.id === item.subjectId);
       if (subject) return subject.color;
     }
 
@@ -100,7 +155,7 @@ export function CalendarView() {
       'one-time': '#14b8a6',
     };
 
-    return typeColors[activity.type] || '#6b7280';
+    return typeColors[item.type] || '#6b7280';
   };
 
   return (
@@ -186,29 +241,33 @@ export function CalendarView() {
                         onClick={() => handleSlotClick(dayIndex, hour)}
                         data-testid={`slot-${dayIndex}-${hour}`}
                       >
-                        {slotBlocks.map(({ occurrence, start, top, height }) => {
-                          const { activity } = occurrence;
-                          return (
-                            <div
-                              key={`${activity.id}-${start.getTime()}`}
-                              className="absolute left-0 right-0 mx-1 z-10 rounded px-2 py-1 text-xs text-white cursor-pointer hover:opacity-80 overflow-hidden"
-                              style={{
-                                top: `${(top / 60) * HOUR_HEIGHT_PX}px`,
-                                height: `${(height / 60) * HOUR_HEIGHT_PX}px`,
-                                backgroundColor: getActivityColor(activity),
-                              }}
-                              onClick={(e) => handleActivityClick(activity, e)}
-                            >
-                              <div className="font-medium truncate">{activity.title}</div>
-                              <div className="text-[10px] opacity-90">
-                                {occurrence.start.toLocaleTimeString('en-US', {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </div>
+                        {slotBlocks.map(({ occurrence, start, top, height }) => (
+                          <div
+                            key={`${occurrence.key}-${start.getTime()}`}
+                            className={`absolute left-0 right-0 mx-1 z-10 rounded px-2 py-1 text-xs text-white overflow-hidden ${
+                              occurrence.activity ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
+                            } ${occurrence.status === 'skipped' ? 'opacity-60' : ''}`}
+                            style={{
+                              top: `${(top / 60) * HOUR_HEIGHT_PX}px`,
+                              height: `${(height / 60) * HOUR_HEIGHT_PX}px`,
+                              backgroundColor: getActivityColor(occurrence),
+                            }}
+                            title={occurrence.activity ? undefined : 'Deleted activity (history)'}
+                            onClick={(e) => handleActivityClick(occurrence, e)}
+                          >
+                            <div className={`font-medium truncate ${occurrence.status === 'skipped' ? 'line-through' : ''}`}>
+                              {occurrence.status === 'done' && <span aria-hidden="true">✓ </span>}
+                              <span>{occurrence.title}</span>
                             </div>
-                          );
-                        })}
+                            <div className="text-[10px] opacity-90">
+                              {occurrence.start.toLocaleTimeString('en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                              {STATUS_LABELS[occurrence.status] && ` · ${STATUS_LABELS[occurrence.status]}`}
+                            </div>
+                          </div>
+                        ))}
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                           <Plus className="w-4 h-4 text-gray-400" />
                         </div>
@@ -226,11 +285,13 @@ export function CalendarView() {
       {isModalOpen && (
         <ActivityModal
           activity={selectedActivity}
+          occurrence={selectedOccurrence ?? undefined}
           initialDate={newActivitySlot ? weekDays[newActivitySlot.day] : undefined}
           initialHour={newActivitySlot?.hour}
           onClose={() => {
             setIsModalOpen(false);
             setSelectedActivity(null);
+            setSelectedOccurrence(null);
             setNewActivitySlot(null);
           }}
         />

@@ -6,6 +6,7 @@ import { SubjectModal } from './SubjectModal';
 import { ActivityModal } from './ActivityModal';
 import { addDays, startOfDay } from '../utils/dates';
 import { expandOccurrences } from '../utils/recurrence';
+import { useOccurrences } from '../hooks/useOccurrences';
 
 interface DashboardProps {
   onViewCalendar: () => void;
@@ -24,6 +25,9 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
   const [planDays, setPlanDays] = useState(7);
   const [isPlanning, setIsPlanning] = useState(false);
   const [planMessage, setPlanMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const today = useMemo(() => startOfDay(new Date()), []);
+  // Today's occurrences with their own marks (a recurring activity is marked per occurrence).
+  const { occurrences: todayOccurrences } = useOccurrences(today, addDays(today, 1));
 
   const plannedAhead = activities.filter(
     (a) => a.autoPlanned && a.status === 'scheduled' && new Date(a.startTime) > new Date(),
@@ -48,13 +52,13 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
   };
 
   const stats = useMemo(() => {
-    const today = startOfDay(new Date());
+    // Includes today's occurrences of recurring activities; the live schedule until the history has loaded.
+    const todayStatuses =
+      todayOccurrences?.map((o) => o.status) ??
+      expandOccurrences(activities, today, addDays(today, 1)).map((o) => o.activity.status);
 
-    // Includes today's occurrences of recurring activities.
-    const todayActivities = expandOccurrences(activities, today, addDays(today, 1));
+    const completedToday = todayStatuses.filter((status) => status === 'done').length;
 
-    const completedToday = todayActivities.filter((o) => o.activity.status === 'done').length;
-    
     const upcomingExams = subjects
       .filter((s) => s.examDate && new Date(s.examDate) > new Date())
       .sort((a, b) => new Date(a.examDate!).getTime() - new Date(b.examDate!).getTime())
@@ -69,14 +73,14 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
     const urgentSubjects = subjects.filter((s) => s.mode === 'emergency' || s.mode === 'determined');
 
     return {
-      todayActivities: todayActivities.length,
+      todayActivities: todayStatuses.length,
       completedToday,
       upcomingExams,
       knowledgeStats,
       urgentSubjects,
       totalTopics: topics.length,
     };
-  }, [activities, subjects, topics]);
+  }, [activities, subjects, topics, today, todayOccurrences]);
 
   const getKnowledgePercentage = (count: number) => {
     return stats.totalTopics > 0 ? Math.round((count / stats.totalTopics) * 100) : 0;

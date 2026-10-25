@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IActivityRepository, ActivityRepository>();
+        services.AddScoped<IActivityOccurrenceRepository, ActivityOccurrenceRepository>();
         services.AddScoped<IActivityTypeRepository, ActivityTypeRepository>();
         services.AddScoped<IStudyStrategyRepository, StudyStrategyRepository>();
         services.AddScoped<IRecurringOptionsRepository, RecurringOptionsRepository>();
@@ -66,6 +67,7 @@ public static class DependencyInjection
     {
         services.AddScoped<ISubjectService, SubjectService>();
         services.AddScoped<ITopicService, TopicService>();
+        services.AddScoped<IActivityHistoryService, ActivityHistoryService>();
         services.AddScoped<IActivityService, ActivityService>();
         services.AddScoped<IActivityTypeService, ActivityTypeService>();
         services.AddScoped<IStudyStrategyService, StudyStrategyService>();

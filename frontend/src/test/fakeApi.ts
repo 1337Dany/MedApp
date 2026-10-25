@@ -1,5 +1,7 @@
 import { http, HttpResponse, JsonBodyType } from 'msw';
-import type { ActivityDto, PlanningWarningDto, SubjectDto, TopicDto } from '../services/mappers';
+import { fromActivityDto } from '../services/mappers';
+import type { ActivityDto, OccurrenceDto, PlanningWarningDto, SubjectDto, TopicDto } from '../services/mappers';
+import { expandOccurrences } from '../utils/recurrence';
 import type { ClassAnalytics } from '../services/api';
 
 // In-memory stand-in for the MedApp API (backend/src/MedApp.API/Controllers), used by the component
@@ -48,6 +50,8 @@ class FakeApi {
   warnings: PlanningWarningDto[] = [];
   analytics: ClassAnalytics = emptyAnalytics();
   requests: RecordedRequest[] = [];
+  // Statuses of single occurrences of recurring activities: `${activityId}|${start ISO}` -> status.
+  occurrenceMarks = new Map<string, OccurrenceDto['status']>();
   // Sessions the planner creates per eligible subject on POST /planning/generate.
   sessionsPerSubject = 2;
   private tokens = new Map<string, string>(); // access or refresh token -> user id
@@ -61,6 +65,7 @@ class FakeApi {
     this.warnings = [];
     this.analytics = emptyAnalytics();
     this.requests = [];
+    this.occurrenceMarks.clear();
     this.sessionsPerSubject = 2;
     this.tokens.clear();
     this.failures = [];
@@ -172,6 +177,26 @@ class FakeApi {
     const token = request.headers.get('Authorization')?.replace('Bearer ', '');
     const id = token && this.tokens.get(token);
     return this.users.find((u) => u.id === id && token!.startsWith('access-'));
+  }
+
+  // The real API answers from its recorded history before now; here the current timetable stands in for it.
+  private occurrences(user: FakeUser, from: Date, to: Date): OccurrenceDto[] {
+    const own = this.activities.filter((a) => a.userId === user.id);
+    return expandOccurrences(own.map((a) => fromActivityDto(this.activityDto(a))), from, to)
+      .filter((o) => o.start >= from)
+      .map(({ activity, start }) => {
+        const dto = own.find((a) => a.id === activity.id)!;
+        const unmarked = dto.isRecurring ? (dto.status === 'skipped' ? 'skipped' : 'scheduled') : dto.status;
+        return {
+          activityId: dto.id,
+          subjectId: dto.subjectId,
+          title: dto.title,
+          activityTypeId: dto.activityTypeId,
+          startTime: start.toISOString(),
+          durationMinutes: dto.durationMinutes,
+          status: this.occurrenceMarks.get(`${dto.id}|${start.toISOString()}`) ?? unmarked,
+        };
+      });
   }
 
   private takeFailure(method: string, path: string) {
@@ -348,7 +373,16 @@ class FakeApi {
     this.route('patch', '/activities/:id/status', ({ user, params, body }) => {
       const activity = this.activities.find((a) => a.id === params.id && a.userId === user.id);
       if (!activity) return new HttpResponse(null, { status: 404 });
-      activity.status = body.status;
+      if (body.occurrenceStart && activity.isRecurring) {
+        const start = new Date(body.occurrenceStart);
+        const matches = this.occurrences(user, start, new Date(start.getTime() + 1000)).some(
+          (o) => o.activityId === activity.id && o.startTime === start.toISOString(),
+        );
+        if (!matches) return problem(400, 'Invalid reference');
+        this.occurrenceMarks.set(`${activity.id}|${start.toISOString()}`, body.status);
+      } else {
+        activity.status = body.status;
+      }
       return HttpResponse.json(this.activityDto(activity));
     }),
     this.route('delete', '/activities/:id', ({ user, params }) => {
@@ -357,6 +391,14 @@ class FakeApi {
       }
       this.activities = this.activities.filter((a) => a.id !== params.id);
       return new HttpResponse(null, { status: 204 });
+    }),
+
+    // Occurrences
+    this.route('get', '/occurrences', ({ user, url }) => {
+      const from = new Date(url.searchParams.get('from')!);
+      const to = new Date(url.searchParams.get('to')!);
+      if (!(to > from)) return problem(400, 'Validation failed', { To: ["'To' must be after 'From'."] });
+      return HttpResponse.json(this.occurrences(user, from, to));
     }),
 
     // Planning: replaces future auto-planned sessions with new ones for subjects that use an automatic strategy

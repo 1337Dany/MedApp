@@ -12,6 +12,9 @@ aggregated analytics of students who agreed to share their data.
   daily/weekly recurrence; every row belongs to one user and is invisible to others.
 - Study planner: sessions in the student's time zone, spaced repetition for active recall, automatic
   re-planning, overload warnings. Rules: [`docs/PLANNING.md`](docs/PLANNING.md).
+- Long-term history and student analytics: past occurrences are recorded as they happened, recurring
+  activities are marked per occurrence, and weekly/monthly reports with charts can go back to any period.
+  Rules: [`docs/ANALYTICS.md`](docs/ANALYTICS.md).
 - Teacher dashboard: aggregates over consenting students only, nothing shown below 5 students.
 - Admins grant the teacher and admin roles.
 
@@ -151,6 +154,7 @@ backend/
   tests/                MedApp.Services.Tests (unit), MedApp.API.Tests (integration)
 frontend/src/**/*.test.*  Vitest unit and component tests; frontend/e2e/ Playwright end-to-end tests
 docs/PLANNING.md        planning rules
+docs/ANALYTICS.md       occurrence history and student analytics
 infra/scripts/          optional demo seed SQL
 ```
 
@@ -249,7 +253,8 @@ erDiagram
 | `POST /api/auth/register \| login \| refresh \| logout`, `GET /api/auth/me` | Register/login rate-limited per client IP |
 | `GET/POST /api/subjects`, `GET/PUT/DELETE /api/subjects/{id}` | Delete removes the subject's topics and activities |
 | `GET /api/topics`, `GET/POST /api/subjects/{id}/topics`, `GET/PUT/DELETE /api/topics/{id}` | A changed rating counts as a review |
-| `GET/POST /api/activities`, `GET/PUT/DELETE /api/activities/{id}`, `PATCH /api/activities/{id}/status` | `?from=&to=` window includes recurring series |
+| `GET/POST /api/activities`, `GET/PUT/DELETE /api/activities/{id}`, `PATCH /api/activities/{id}/status` | `?from=&to=` window includes recurring series; status with `occurrenceStart` marks one occurrence of a series |
+| `GET /api/occurrences?from=&to=&timeZone=` | Concrete occurrences: recorded history before now, timetable after ([`docs/ANALYTICS.md`](docs/ANALYTICS.md)) |
 | `GET /api/study-strategies`, `GET /api/activity-types` | Seeded lookups |
 | `POST /api/planning/generate`, `GET /api/planning/warnings` | Study planner |
 | `PUT /api/users/me` | Profile and data-sharing consent |
