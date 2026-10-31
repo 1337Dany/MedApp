@@ -32,6 +32,11 @@ public static class TimeZones
         {
             local = local.AddHours(1);
         }
+        // A wall-clock time repeated by a DST change: the first pass (daylight time), the same choice as browsers.
+        if (zone.IsAmbiguousTime(local))
+        {
+            return DateTime.SpecifyKind(local - zone.GetAmbiguousTimeOffsets(local).Max(), DateTimeKind.Utc);
+        }
         return TimeZoneInfo.ConvertTimeToUtc(local, zone);
     }
 }

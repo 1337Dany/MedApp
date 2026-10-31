@@ -5,6 +5,7 @@ using MedApp.Services.DTOs.History;
 using MedApp.Services.History;
 using MedApp.Services.Planning;
 using MedApp.Services.Repositories;
+using MedApp.Services.Validation;
 
 namespace MedApp.Services.Services;
 
@@ -65,16 +66,40 @@ public class ActivityHistoryService : IActivityHistoryService
         return result.OrderBy(o => o.StartTime).ToList();
     }
 
+    public async Task<IUnitOfWorkTransaction> BeginWriteAsync(Guid userId, CancellationToken ct = default)
+    {
+        var transaction = await _uow.BeginTransactionAsync(ct);
+        await _occurrences.LockUserHistoryAsync(userId, ct);
+        return transaction;
+    }
+
     public async Task RecordPastAsync(Guid userId, CancellationToken ct = default) =>
         await RecordPastAsync(userId, DateTime.UtcNow, await FindZoneAsync(userId, null, ct), ct);
 
-    public async Task ReleaseAsync(Activity activity, bool staysSeries, CancellationToken ct = default)
+    public async Task<Status?> ReleaseAsync(Activity activity, bool staysSeries, DateTime? newStartUtc = null,
+        CancellationToken ct = default)
     {
         var nowUtc = DateTime.UtcNow;
         var wasSeries = OccurrenceExpander.IsSeries(activity);
+        Status? mark = null;
 
         foreach (var row in await _occurrences.GetByActivityIdsAsync([activity.ActivityId], ct: ct))
         {
+            // The form drops seconds, so the same occurrence can come back a few seconds earlier.
+            if (wasSeries != staysSeries && newStartUtc is { } newStart && SameMinute(row.StartTime, newStart))
+            {
+                if (wasSeries && row.Status != OccurrenceExpander.DefaultStatus(activity))
+                {
+                    mark = row.Status;
+                }
+
+                if (row.StartTime < nowUtc && newStart < nowUtc)
+                {
+                    row.StartTime = newStart;
+                    continue;
+                }
+            }
+
             if (!wasSeries || row.StartTime >= nowUtc)
             {
                 await _occurrences.DeleteAsync(row, ct);
@@ -89,6 +114,28 @@ public class ActivityHistoryService : IActivityHistoryService
         if (!wasSeries || !staysSeries)
         {
             activity.HistoryRecordedUntil = null;
+        }
+
+        return mark;
+    }
+
+    public async Task RecordTodayOfMovedSeriesAsync(Activity series, CancellationToken ct = default)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var zone = await FindZoneAsync(series.UserId, null, ct);
+        var todayUtc = TimeZones.ToUtc(TimeZones.ToLocal(nowUtc, zone).Date, zone);
+
+        var start = OccurrenceExpander.StartsUtc(series, todayUtc, nowUtc, zone).Cast<DateTime?>().FirstOrDefault();
+        if (start is null)
+        {
+            return;
+        }
+
+        // Rows of later today were released with the old pattern; a row before now means today has already been counted.
+        var rows = await _occurrences.GetByActivityIdsAsync([series.ActivityId], todayUtc, ct);
+        if (!rows.Any(o => o.StartTime < nowUtc))
+        {
+            await _occurrences.AddAsync(Snapshot(new ActivityOccurrence(), series, start.Value), ct);
         }
     }
 
@@ -133,8 +180,8 @@ public class ActivityHistoryService : IActivityHistoryService
     private async Task RecordPastAsync(Guid userId, DateTime nowUtc, TimeZoneInfo zone, CancellationToken ct)
     {
         // Parallel requests of the same user (several views load at once) would record the same occurrences.
-        await using var transaction = await _uow.BeginTransactionAsync(ct);
-        await _occurrences.LockUserHistoryAsync(userId, ct);
+        // Inside a write this joins its transaction; the lock is already held.
+        await using var transaction = await BeginWriteAsync(userId, ct);
 
         var pending = await _activities.GetUnrecordedAsync(userId, nowUtc, ct);
         if (pending.Count == 0)
@@ -142,14 +189,21 @@ public class ActivityHistoryService : IActivityHistoryService
             return;
         }
 
-        var from = pending.Min(a => a.HistoryRecordedUntil ?? a.StartTime);
+        // Rows from before the accepted dates exist only in old data; nothing is recorded that far back.
+        DateTime RecordFrom(Activity a)
+        {
+            var from = a.HistoryRecordedUntil ?? a.StartTime;
+            return from < ActivityDates.MinUtc ? ActivityDates.MinUtc : from;
+        }
+
+        var from = pending.Min(RecordFrom);
         var existing = (await _occurrences.GetByActivityIdsAsync(pending.Select(a => a.ActivityId).ToList(), from, ct))
             .ToDictionary(o => (o.ActivityId!.Value, o.StartTime));
 
         foreach (var activity in pending)
         {
             var series = OccurrenceExpander.IsSeries(activity);
-            var starts = OccurrenceExpander.StartsUtc(activity, activity.HistoryRecordedUntil ?? activity.StartTime, nowUtc, zone);
+            var starts = OccurrenceExpander.StartsUtc(activity, RecordFrom(activity), nowUtc, zone);
 
             foreach (var start in starts)
             {
@@ -170,6 +224,9 @@ public class ActivityHistoryService : IActivityHistoryService
         await _uow.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
     }
+
+    private static bool SameMinute(DateTime a, DateTime b) =>
+        a.Ticks / TimeSpan.TicksPerMinute == b.Ticks / TimeSpan.TicksPerMinute;
 
     private static ActivityOccurrence Snapshot(ActivityOccurrence row, Activity activity, DateTime startUtc, Status? status = null)
     {

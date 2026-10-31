@@ -63,6 +63,8 @@ public class SubjectService : ISubjectService
 
     public async Task<bool> DeleteAsync(Guid subjectId, Guid userId, CancellationToken ct = default)
     {
+        await using var transaction = await _history.BeginWriteAsync(userId, ct);
+
         var subject = await _repository.GetByIdAsync(subjectId, userId, ct);
         if (subject is null)
         {
@@ -76,6 +78,7 @@ public class SubjectService : ISubjectService
         await _repository.DeleteAsync(subject, ct);
         await _uow.SaveChangesAsync(ct);
         await _planning.ReplanIfActiveAsync(userId, ct);
+        await transaction.CommitAsync(ct);
         return true;
     }
 }

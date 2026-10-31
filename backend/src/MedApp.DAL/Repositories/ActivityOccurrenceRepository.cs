@@ -35,11 +35,13 @@ public class ActivityOccurrenceRepository : IActivityOccurrenceRepository
         return query.ToListAsync(ct);
     }
 
-    // A transaction-scoped Postgres advisory lock keyed by the user id.
-    public Task LockUserHistoryAsync(Guid userId, CancellationToken ct = default)
+    // A transaction-scoped Postgres advisory lock keyed by the user id. Waiting holds a pooled connection, so the wait
+    // is limited: past the timeout Postgres raises 55P03, which the API answers with 503.
+    public async Task LockUserHistoryAsync(Guid userId, CancellationToken ct = default)
     {
         var key = BitConverter.ToInt64(userId.ToByteArray(), 0) ^ BitConverter.ToInt64(userId.ToByteArray(), 8);
-        return _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({key})", ct);
+        await _db.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '5s'", ct);
+        await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({key})", ct);
     }
 
     public Task AddAsync(ActivityOccurrence occurrence, CancellationToken ct = default)

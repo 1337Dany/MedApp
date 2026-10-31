@@ -130,4 +130,71 @@ describe('CalendarView', () => {
     await waitFor(() => expect(screen.getByTestId('slot-1-9')).toHaveTextContent('Done'));
     expect(screen.getByTestId('slot-4-9')).not.toHaveTextContent('Done');
   });
+
+  it('draws overlapping activities side by side, also when they start in different hours', async () => {
+    const wednesday = addDays(thisSunday(), 3);
+    await openCalendar((user) => {
+      fakeApi.addActivity(user.id, { title: 'Long', durationMinutes: 180, startTime: atLocal(wednesday, 9) });
+      fakeApi.addActivity(user.id, { title: 'Later', durationMinutes: 60, startTime: atLocal(wednesday, 10) });
+      fakeApi.addActivity(user.id, { title: 'Alone', durationMinutes: 60, startTime: atLocal(wednesday, 15) });
+    });
+    const block = (slot: string, title: string) => within(screen.getByTestId(slot)).getByText(title).closest('.z-10') as HTMLElement;
+
+    await waitFor(() => expect(block('slot-3-10', 'Later').style.left).toContain('50%'));
+    expect(block('slot-3-9', 'Long').style.width).toContain('50%');
+    expect(block('slot-3-10', 'Later').style.width).toContain('50%');
+    expect(block('slot-3-15', 'Alone').style.width).toContain('100%');
+  });
+
+  it('hides the time line of a block that is too short for it', async () => {
+    const wednesday = addDays(thisSunday(), 3);
+    await openCalendar((user) => {
+      fakeApi.addActivity(user.id, { title: 'Short', durationMinutes: 15, startTime: atLocal(wednesday, 9) });
+      fakeApi.addActivity(user.id, { title: 'Normal', durationMinutes: 60, startTime: atLocal(wednesday, 11) });
+    });
+    const block = (slot: string, title: string) => within(screen.getByTestId(slot)).getByText(title).closest('.z-10') as HTMLElement;
+
+    await waitFor(() => expect(block('slot-3-9', 'Short').children).toHaveLength(1));
+    expect(block('slot-3-9', 'Short').style.height).toBe('20px');
+    expect(block('slot-3-11', 'Normal').children).toHaveLength(2);
+    expect(block('slot-3-9', 'Short').title).toContain('Short\n');
+    expect(block('slot-3-11', 'Normal').title).toContain('Normal\n');
+  });
+
+  it('reads the occurrences again after marking one even if the background refresh fails', async () => {
+    const sunday = thisSunday();
+    const { events } = await openCalendar((user) => {
+      fakeApi.addActivity(user.id, {
+        title: 'Lecture',
+        activityTypeId: 2,
+        startTime: atLocal(addDays(sunday, -14), 9),
+        isRecurring: true,
+        recurrence: { frequency: 'daily', daysOfWeek: [], until: null },
+      });
+    });
+    fakeApi.failNext('GET', /\/activities$/, 500);
+    fakeApi.failNext('GET', /planning\/warnings/, 500);
+
+    await events.click(within(screen.getByTestId('slot-1-9')).getByText('Lecture'));
+    const modal = await findModal('Edit Activity');
+    await events.click(within(modal).getByRole('button', { name: 'Done' }));
+    await events.click(within(modal).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.getByTestId('slot-1-9')).toHaveTextContent('Done'));
+  });
+
+  it('reports a failed read of the occurrences and can try again', async () => {
+    const sunday = thisSunday();
+    const { events } = await openCalendar((user) => {
+      fakeApi.addActivity(user.id, { title: 'Exam prep', startTime: atLocal(addDays(sunday, 2), 10) });
+    });
+    fakeApi.failNext('GET', /occurrences/, 500);
+
+    await events.click(screen.getByRole('button', { name: 'Next week' }));
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent('could not be loaded');
+
+    await events.click(within(banner).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
 });

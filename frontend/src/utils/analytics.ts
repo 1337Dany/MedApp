@@ -3,7 +3,7 @@ import { addDays, startOfDay } from './dates';
 
 // Pure helpers behind the Analytics view (rules: docs/ANALYTICS.md).
 
-export type PeriodKind = 'week' | 'month';
+export type PeriodKind = 'day' | 'week' | 'month';
 
 export interface Period {
   kind: PeriodKind;
@@ -19,12 +19,18 @@ export const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.ge
 export const addMonths = (date: Date, months: number) => new Date(date.getFullYear(), date.getMonth() + months, 1);
 
 export function periodOf(kind: PeriodKind, date: Date): Period {
+  if (kind === 'day') {
+    const start = startOfDay(date);
+    return { kind, start, end: startOfDay(addDays(start, 1)) };
+  }
   const start = kind === 'week' ? startOfWeek(date) : startOfMonth(date);
   return { kind, start, end: kind === 'week' ? addDays(start, 7) : addMonths(start, 1) };
 }
 
-export const shiftPeriod = (period: Period, steps: number): Period =>
-  periodOf(period.kind, period.kind === 'week' ? addDays(period.start, 7 * steps) : addMonths(period.start, steps));
+export function shiftPeriod(period: Period, steps: number): Period {
+  if (period.kind === 'day') return periodOf('day', addDays(period.start, steps));
+  return periodOf(period.kind, period.kind === 'week' ? addDays(period.start, 7 * steps) : addMonths(period.start, steps));
+}
 
 /** The period and the ones before it, oldest first. */
 export const trailingPeriods = (period: Period, count: number): Period[] =>
@@ -70,9 +76,11 @@ export function hoursByDay(occurrences: OccurrenceRecord[], period: Period) {
     const row: Record<string, number | string | Date> = {
       day,
       label:
-        period.kind === 'week'
-          ? day.toLocaleDateString('en-US', { weekday: 'short' })
-          : String(day.getDate()),
+        period.kind === 'day'
+          ? day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+          : period.kind === 'week'
+            ? day.toLocaleDateString('en-US', { weekday: 'short' })
+            : String(day.getDate()),
     };
     for (const group of TYPE_GROUPS) {
       row[group.key] = hours(

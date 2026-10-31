@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -9,8 +10,10 @@ using MedApp.Services.Services.Auth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -97,10 +100,22 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 });
 
 var authPermitLimit = builder.Configuration.GetValue("RateLimiting:AuthPermitLimit", 5);
+var userPermitLimit = builder.Configuration.GetValue("RateLimiting:UserPermitLimit", 20);
+var userQueueLimit = builder.Configuration.GetValue("RateLimiting:UserQueueLimit", 200);
 
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Requests of one user in progress at a time; anonymous ones are only limited by the auth policy.
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        context.User.FindFirstValue(ClaimTypes.NameIdentifier) is { } userId
+            ? RateLimitPartition.GetConcurrencyLimiter(userId, _ => new ConcurrencyLimiterOptions
+            {
+                PermitLimit = userPermitLimit,
+                QueueLimit = userQueueLimit,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            })
+            : RateLimitPartition.GetNoLimiter("anonymous"));
     options.AddPolicy(AuthController.RateLimitPolicy, context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -124,12 +139,45 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseRateLimiter();
+// A write or read that waited too long for the user's history lock (Postgres lock_timeout) can simply be repeated.
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception e) when (IsLockTimeout(e) && !context.Response.HasStarted)
+    {
+        context.Response.Clear();
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        context.Response.Headers.RetryAfter = "5";
+        await context.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Title = "The server is busy with your other requests. Please try again.",
+            Status = StatusCodes.Status503ServiceUnavailable
+        }, options: null, contentType: "application/problem+json");
+    }
+});
+
 app.UseAuthentication();
+// After authentication, because the global limiter is partitioned by the signed-in user.
+app.UseRateLimiter();
 app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+static bool IsLockTimeout(Exception? e)
+{
+    for (; e is not null; e = e.InnerException)
+    {
+        if (e is PostgresException { SqlState: PostgresErrorCodes.LockNotAvailable })
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
 // Exposed for WebApplicationFactory in MedApp.API.Tests.
 public partial class Program;

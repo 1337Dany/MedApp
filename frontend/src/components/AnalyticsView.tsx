@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useId, useMemo, useState } from 'react';
+import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -14,10 +14,14 @@ import {
 } from 'recharts';
 import { useStore } from '../store/useStore';
 import { useOccurrences } from '../hooks/useOccurrences';
+import { StaleDataBanner } from './StaleDataBanner';
+import { Calendar } from './ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import {
   Period,
   PeriodKind,
   TYPE_GROUPS,
+  daysOf,
   hoursByDay,
   hoursByGroup,
   inPeriod,
@@ -35,7 +39,10 @@ const GRID = '#e1e0d9';
 const AXIS = { stroke: '#c3c2b7', tick: { fill: '#52514e', fontSize: 12 } };
 const PLANNED = '#86b6ef';
 const STUDIED = '#1c5cab';
-const TREND_LENGTH: Record<PeriodKind, number> = { week: 8, month: 6 };
+const KIND_LABELS: Record<PeriodKind, string> = { day: 'Day', week: 'Week', month: 'Month' };
+const CURRENT_LABELS: Record<PeriodKind, string> = { day: 'Today', week: 'This week', month: 'This month' };
+const TREND_LENGTH: Record<PeriodKind, number> = { day: 14, week: 8, month: 6 };
+const TREND_UNITS: Record<PeriodKind, string> = { day: 'Days', week: 'Weeks', month: 'Months' };
 // Legend text stays in ink; the dot next to it carries the series color.
 const LEGEND = {
   iconType: 'circle' as const,
@@ -44,18 +51,25 @@ const LEGEND = {
 };
 
 const formatPeriod = (period: Period) => {
+  if (period.kind === 'day') {
+    return period.start.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+  }
   if (period.kind === 'month') {
     return period.start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   }
   const last = addDays(period.end, -1);
-  return `${period.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${last.toLocaleDateString(
-    'en-US',
-    { month: 'short', day: 'numeric', year: 'numeric' },
-  )}`;
+  const startFormat: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  // A week over New Year names both years.
+  if (period.start.getFullYear() !== last.getFullYear()) startFormat.year = 'numeric';
+  return `${period.start.toLocaleDateString('en-US', startFormat)} - ${last.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })}`;
 };
 
 const trendLabel = (period: Period) =>
-  period.kind === 'week'
+  period.kind !== 'month'
     ? period.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : period.start.toLocaleDateString('en-US', { month: 'short' });
 
@@ -119,27 +133,34 @@ function Insight({ tone, title, text }: { tone: 'yellow' | 'red' | 'blue' | 'gra
 export function AnalyticsView() {
   const { subjects, topics } = useStore();
   const [period, setPeriod] = useState<Period>(() => periodOf('week', new Date()));
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const periodTextId = useId();
 
   // One request covers the selected period and the trend before it.
   const trend = useMemo(() => trailingPeriods(period, TREND_LENGTH[period.kind]), [period]);
-  const { occurrences, error } = useOccurrences(trend[0].start, period.end);
+  const { occurrences, error, retry } = useOccurrences(trend[0].start, period.end);
 
   const now = new Date();
   const isCurrent = period.start <= now && now < period.end;
+  const inThisPeriod = period.kind === 'day' ? 'on this day' : `in this ${period.kind}`;
 
   const stats = useMemo(() => {
     if (!occurrences) return null;
     const current = inPeriod(occurrences, period);
     const study = studySummary(current, now);
     const byGroup = hoursByGroup(occurrences, period);
-    const days = (period.end.getTime() - period.start.getTime()) / 86_400_000;
     const sleep = byGroup.find((g) => g.key === 'sleep')!.hours;
+    // A single day counts the nights that begin on it, or a night starting late that day would read as little sleep.
+    const sleepPerDay =
+      period.kind === 'day'
+        ? current.filter((o) => o.type === 'sleep').reduce((sum, o) => sum + o.duration, 0) / 60
+        : sleep / daysOf(period).length;
     return {
       study,
       byDay: hoursByDay(occurrences, period),
       byGroup,
       totalHours: byGroup.reduce((sum, g) => sum + g.hours, 0),
-      sleepPerDay: sleep / days,
+      sleepPerDay,
       statuses: statusBreakdown(current, now),
       bySubject: studyBySubject(current).map((row) => ({
         ...row,
@@ -159,6 +180,59 @@ export function AnalyticsView() {
   ];
   const redTopics = knowledge[2].value;
 
+  const insights = stats
+    ? [
+        stats.study.completionRate !== null && stats.study.completionRate < 70 && (
+          <Insight
+            key="Low Completion Rate"
+            tone="yellow"
+            title="Low Completion Rate"
+            text={`You completed ${stats.study.completionRate}% of your study sessions ${inThisPeriod}. Consider reviewing your schedule to ensure it's realistic and achievable.`}
+          />
+        ),
+        topics.length > 0 && redTopics > topics.length * 0.3 && (
+          <Insight
+            key="Many Topics Need Attention"
+            tone="red"
+            title="Many Topics Need Attention"
+            text={`${redTopics} topics need work. Consider increasing study time or using the traffic light strategy.`}
+          />
+        ),
+        stats.study.averageSessionMinutes > 120 && (
+          <Insight
+            key="Long Study Sessions"
+            tone="blue"
+            title="Long Study Sessions"
+            text={`Your average study session is ${stats.study.averageSessionMinutes} minutes. Consider breaking them into shorter sessions with breaks for better retention.`}
+          />
+        ),
+        stats.sleepPerDay > 0 && stats.sleepPerDay < 7 && (
+          <Insight
+            key="Little Sleep Scheduled"
+            tone="blue"
+            title="Little Sleep Scheduled"
+            text={`Your schedule has ${stats.sleepPerDay.toFixed(1)} hours of sleep ${period.kind === 'day' ? 'on this day' : 'per day'}. Seven or more hours help memory consolidation.`}
+          />
+        ),
+        stats.study.plannedHours === 0 && (
+          <Insight
+            key="No Study Planned"
+            tone="gray"
+            title="No Study Planned"
+            text={`There are no study sessions ${inThisPeriod}. Add some or let the Study Planner on the Dashboard fill your free time.`}
+          />
+        ),
+        stats.statuses.every((s) => s.status === 'scheduled' || s.count === 0) && (
+          <Insight
+            key="Start Tracking"
+            tone="gray"
+            title="Start Tracking"
+            text="Mark activities as done, partially done or skipped in the Calendar to see meaningful analytics."
+          />
+        ),
+      ].filter(Boolean)
+    : [];
+
   return (
     <div className="space-y-6">
       {/* Header and period controls */}
@@ -169,7 +243,7 @@ export function AnalyticsView() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border border-gray-300 overflow-hidden" role="group" aria-label="Report period">
-            {(['week', 'month'] as const).map((kind) => (
+            {(['day', 'week', 'month'] as const).map((kind) => (
               <button
                 key={kind}
                 onClick={() => setPeriod(periodOf(kind, isCurrent ? now : period.start))}
@@ -178,7 +252,7 @@ export function AnalyticsView() {
                   period.kind === kind ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
                 }`}
               >
-                {kind === 'week' ? 'Week' : 'Month'}
+                {KIND_LABELS[kind]}
               </button>
             ))}
           </div>
@@ -189,9 +263,35 @@ export function AnalyticsView() {
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <span className="min-w-44 text-center text-sm font-medium text-gray-900" data-testid="analytics-period">
-            {formatPeriod(period)}
-          </span>
+          <Popover open={isPickerOpen} onOpenChange={setIsPickerOpen}>
+            <PopoverTrigger asChild>
+              <button
+                aria-label="Pick a date"
+                aria-describedby={periodTextId}
+                style={{ minWidth: '11rem' }}
+                className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                <CalendarDays className="w-4 h-4 text-gray-500" aria-hidden="true" />
+                <span id={periodTextId} data-testid="analytics-period">
+                  {formatPeriod(period)}
+                </span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent collisionPadding={16}>
+              <Calendar
+                mode="single"
+                required
+                initialFocus
+                defaultMonth={period.start}
+                selected={period.kind === 'day' ? period.start : undefined}
+                onSelect={(date) => {
+                  if (!date) return;
+                  setPeriod(periodOf('day', date));
+                  setIsPickerOpen(false);
+                }}
+              />
+            </PopoverContent>
+          </Popover>
           <button
             onClick={() => setPeriod(shiftPeriod(period, 1))}
             aria-label={`Next ${period.kind}`}
@@ -204,14 +304,12 @@ export function AnalyticsView() {
             disabled={isCurrent}
             className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
           >
-            {period.kind === 'week' ? 'This week' : 'This month'}
+            {CURRENT_LABELS[period.kind]}
           </button>
         </div>
       </div>
 
-      {error && !stats && (
-        <p className="p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</p>
-      )}
+      {error && <StaleDataBanner error={error} stale={stats !== null} onRetry={retry} />}
       {!error && !stats && <p className="text-gray-500">Loading the report...</p>}
 
       {stats && (
@@ -238,7 +336,9 @@ export function AnalyticsView() {
 
           {/* Where the time goes */}
           <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h3 className="font-medium text-gray-900">Time by Activity Type (Hours per Day)</h3>
+            <h3 className="font-medium text-gray-900">
+              Time by Activity Type ({period.kind === 'day' ? 'Hours' : 'Hours per Day'})
+            </h3>
             <p className="text-sm text-gray-500 mt-1">
               Past days come from your history, coming days from your current schedule.
             </p>
@@ -310,7 +410,7 @@ export function AnalyticsView() {
             {/* Study trend */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <h3 className="font-medium text-gray-900">
-                Study Trend (Last {TREND_LENGTH[period.kind]} {period.kind === 'week' ? 'Weeks' : 'Months'}, Hours)
+                Study Trend (Last {TREND_LENGTH[period.kind]} {TREND_UNITS[period.kind]}, Hours)
               </h3>
               <ResponsiveContainer width="100%" height={260} className="mt-4">
                 <LineChart data={stats.trend}>
@@ -344,7 +444,7 @@ export function AnalyticsView() {
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <p className="text-gray-500 text-center py-12">No study sessions or classes in this {period.kind}.</p>
+                <p className="text-gray-500 text-center py-12">No study sessions or classes {inThisPeriod}.</p>
               )}
             </div>
           </div>
@@ -372,48 +472,7 @@ export function AnalyticsView() {
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h3 className="font-medium text-gray-900 mb-4">Insights & Recommendations</h3>
             <div className="space-y-3">
-              {stats.study.completionRate !== null && stats.study.completionRate < 70 && (
-                <Insight
-                  tone="yellow"
-                  title="Low Completion Rate"
-                  text={`You completed ${stats.study.completionRate}% of your study sessions this ${period.kind}. Consider reviewing your schedule to ensure it's realistic and achievable.`}
-                />
-              )}
-              {topics.length > 0 && redTopics > topics.length * 0.3 && (
-                <Insight
-                  tone="red"
-                  title="Many Topics Need Attention"
-                  text={`${redTopics} topics need work. Consider increasing study time or using the traffic light strategy.`}
-                />
-              )}
-              {stats.study.averageSessionMinutes > 120 && (
-                <Insight
-                  tone="blue"
-                  title="Long Study Sessions"
-                  text={`Your average study session is ${stats.study.averageSessionMinutes} minutes. Consider breaking them into shorter sessions with breaks for better retention.`}
-                />
-              )}
-              {stats.sleepPerDay > 0 && stats.sleepPerDay < 7 && (
-                <Insight
-                  tone="blue"
-                  title="Little Sleep Scheduled"
-                  text={`Your schedule has ${stats.sleepPerDay.toFixed(1)} hours of sleep per day. Seven or more hours help memory consolidation.`}
-                />
-              )}
-              {stats.study.plannedHours === 0 && (
-                <Insight
-                  tone="gray"
-                  title="No Study Planned"
-                  text={`There are no study sessions in this ${period.kind}. Add some or let the Study Planner on the Dashboard fill your free time.`}
-                />
-              )}
-              {stats.statuses.every((s) => s.status === 'scheduled' || s.count === 0) && (
-                <Insight
-                  tone="gray"
-                  title="Start Tracking"
-                  text="Mark activities as done, partially done or skipped in the Calendar to see meaningful analytics."
-                />
-              )}
+              {insights.length > 0 ? insights : <p className="text-sm text-gray-500">Nothing to flag.</p>}
             </div>
           </div>
         </>

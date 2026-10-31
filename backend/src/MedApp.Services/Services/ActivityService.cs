@@ -72,6 +72,8 @@ public class ActivityService : IActivityService
     public async Task<ServiceResult<ActivityDto>> UpdateAsync(Guid activityId, Guid userId, ActivityRequest request,
         CancellationToken ct = default)
     {
+        await using var transaction = await _history.BeginWriteAsync(userId, ct);
+
         var activity = await _repository.GetByIdAsync(activityId, userId, ct);
         if (activity is null)
         {
@@ -89,13 +91,21 @@ public class ActivityService : IActivityService
         // The history keeps what happened until now; only a change of when a series occurs drops future marks.
         await _history.RecordPastAsync(userId, ct);
         var staysSeries = request.IsRecurring && request.Recurrence is not null;
-        if (!OccurrenceExpander.IsSeries(activity) || !staysSeries || !SamePattern(activity, request))
+        var wasSeries = OccurrenceExpander.IsSeries(activity);
+        var patternChanged = wasSeries && staysSeries && !SamePattern(activity, request);
+        Status? mark = null;
+        if (!wasSeries || !staysSeries || patternChanged)
         {
-            await _history.ReleaseAsync(activity, staysSeries, ct);
+            mark = await _history.ReleaseAsync(activity, staysSeries, ToUtc(request.StartTime), ct);
         }
 
         _mapper.Map(request, activity);
         await ApplyAndCleanUpAsync(activity, request, references.Value, ct);
+
+        if (patternChanged)
+        {
+            await _history.RecordTodayOfMovedSeriesAsync(activity, ct);
+        }
 
         // Moving or re-targeting a planned session makes it the student's own (kept on re-planning).
         if (activity.IsAutoPlanned &&
@@ -105,8 +115,16 @@ public class ActivityService : IActivityService
             activity.IsAutoPlanned = false;
         }
 
+        // A series that becomes a one-off keeps the mark of that occurrence, unless the form chose another status.
+        // The mark already counted as a review when it was set.
+        var markKept = mark is not null && activity.Status == before.Status;
+        if (markKept)
+        {
+            activity.Status = mark!.Value;
+        }
+
         var statusChanged = activity.Status != before.Status;
-        if (statusChanged)
+        if (statusChanged && !markKept)
         {
             await OnStatusChangedAsync(activity.TopicId, activity.Status, userId, ct);
         }
@@ -116,12 +134,15 @@ public class ActivityService : IActivityService
         {
             await _planning.ReplanIfActiveAsync(userId, ct);
         }
+        await transaction.CommitAsync(ct);
         return ServiceResult<ActivityDto>.Success(_mapper.Map<ActivityDto>(activity));
     }
 
     public async Task<ServiceResult<ActivityDto>> UpdateStatusAsync(Guid activityId, Guid userId, Status status,
         DateTime? occurrenceStart = null, CancellationToken ct = default)
     {
+        await using var transaction = await _history.BeginWriteAsync(userId, ct);
+
         var activity = await _repository.GetByIdAsync(activityId, userId, ct);
         if (activity is null)
         {
@@ -149,6 +170,7 @@ public class ActivityService : IActivityService
             {
                 await _planning.ReplanIfActiveAsync(userId, ct);
             }
+            await transaction.CommitAsync(ct);
             return ServiceResult<ActivityDto>.Success(_mapper.Map<ActivityDto>(activity));
         }
 
@@ -161,17 +183,20 @@ public class ActivityService : IActivityService
         await _history.RecordPastAsync(userId, ct);
         if (!OccurrenceExpander.IsSeries(activity))
         {
-            await _history.ReleaseAsync(activity, staysSeries: false, ct);
+            await _history.ReleaseAsync(activity, staysSeries: false, ct: ct);
         }
         activity.Status = status;
         await OnStatusChangedAsync(activity.TopicId, activity.Status, userId, ct);
         await _uow.SaveChangesAsync(ct);
         await _planning.ReplanIfActiveAsync(userId, ct);
+        await transaction.CommitAsync(ct);
         return ServiceResult<ActivityDto>.Success(_mapper.Map<ActivityDto>(activity));
     }
 
     public async Task<bool> DeleteAsync(Guid activityId, Guid userId, CancellationToken ct = default)
     {
+        await using var transaction = await _history.BeginWriteAsync(userId, ct);
+
         var activity = await _repository.GetByIdAsync(activityId, userId, ct);
         if (activity is null)
         {
@@ -180,7 +205,7 @@ public class ActivityService : IActivityService
 
         // Past occurrences of a series stay in the history; a one-off activity is removed from it.
         await _history.RecordPastAsync(userId, ct);
-        await _history.ReleaseAsync(activity, staysSeries: false, ct);
+        await _history.ReleaseAsync(activity, staysSeries: false, ct: ct);
 
         if (activity.RecurringOptions is not null)
         {
@@ -189,6 +214,7 @@ public class ActivityService : IActivityService
 
         await _repository.DeleteAsync(activity, ct);
         await _uow.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return true;
     }
 

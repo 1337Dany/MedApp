@@ -6,10 +6,15 @@ import { ActivityModal } from './ActivityModal';
 import { addDays, startOfDay } from '../utils/dates';
 import { expandOccurrences } from '../utils/recurrence';
 import { useOccurrences } from '../hooks/useOccurrences';
+import { layoutLanes } from '../utils/calendarLayout';
+import { StaleDataBanner } from './StaleDataBanner';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
-const HOUR_HEIGHT_PX = 60; // matches min-h-[60px] of an hour cell
+const HOUR_HEIGHT_PX = 60; // an hour cell: min-h-[60px], its bottom border included
+const MIN_BLOCK_MINUTES = 20; // the shortest block that stays readable and clickable
+const NO_PADDING_BELOW_PX = 24; // the title line with the vertical padding
+const TIME_LINE_FROM_PX = 38; // the title and time lines with the vertical padding
 const STATUS_LABELS: Record<ActivityStatus, string> = {
   scheduled: '',
   done: 'Done',
@@ -49,15 +54,18 @@ export function CalendarView() {
   }, [weekStart]);
 
   // From the day before, so an occurrence that continues past midnight into the week is drawn.
-  const { occurrences: history } = useOccurrences(addDays(weekStart, -1), addDays(weekStart, 7));
+  const { occurrences: history, error, retry } = useOccurrences(addDays(weekStart, -1), addDays(weekStart, 7));
 
   // What has started comes from the history, which keeps past weeks as they were when the schedule changes.
   // The rest is the current schedule (recurring series expanded), with the marks of single occurrences.
+  // After a failed read the history may be behind; a one-off activity is still shown as it is now, because its
+  // history entry only mirrors it.
   const weekOccurrences = useMemo((): CalendarItem[] => {
     const now = new Date();
     const marks = new Map((history ?? []).map((o) => [`${o.activityId}|${o.start.getTime()}`, o.status]));
+    const isCurrentOneOff = (id?: string) => !!error && activities.some((a) => a.id === id && !a.recurring);
     const live = expandOccurrences(activities, weekStart, addDays(weekStart, 7))
-      .filter((o) => !history || o.start >= now)
+      .filter((o) => !history || o.start >= now || isCurrentOneOff(o.activity.id))
       .map(({ activity, start, end }) => ({
         key: `${activity.id}-${start.getTime()}`,
         title: activity.title,
@@ -65,13 +73,13 @@ export function CalendarView() {
         subjectId: activity.subjectId,
         start,
         end,
-        status:
-          marks.get(`${activity.id}|${start.getTime()}`) ??
-          (activity.recurring ? (activity.status === 'skipped' ? 'skipped' : 'scheduled') : activity.status),
+        status: activity.recurring
+          ? marks.get(`${activity.id}|${start.getTime()}`) ?? (activity.status === 'skipped' ? 'skipped' : 'scheduled')
+          : activity.status,
         activity,
       }));
     const past = (history ?? [])
-      .filter((o) => o.start < now)
+      .filter((o) => o.start < now && !isCurrentOneOff(o.activityId))
       .map((o, i) => ({
         key: `${o.activityId ?? `deleted-${i}`}-${o.start.getTime()}`,
         title: o.title,
@@ -83,22 +91,30 @@ export function CalendarView() {
         activity: activities.find((a) => a.id === o.activityId),
       }));
     return [...past, ...live];
-  }, [activities, history, weekStart]);
+  }, [activities, history, error, weekStart]);
 
-  // Each occurrence is drawn once per day, in the hour cell where it starts on that day
-  // (00:00 when it continues from the previous day), as tall as its duration within the day.
-  const getBlocksForSlot = (dayIndex: number, hour: number) => {
-    const dayStart = weekDays[dayIndex];
-    const dayEnd = addDays(dayStart, 1);
+  // Each occurrence is drawn once per day, in the hour cell where it starts on that day (00:00 when it continues
+  // from the previous day), as tall as its duration within the day. Lanes are per day, because overlapping blocks
+  // can start in different hour cells.
+  const blocksByDay = useMemo(
+    () =>
+      weekDays.map((dayStart) => {
+        const dayEnd = addDays(dayStart, 1);
+        return layoutLanes(
+          weekOccurrences.flatMap((occurrence) => {
+            const start = occurrence.start > dayStart ? occurrence.start : dayStart;
+            const clippedEnd = occurrence.end < dayEnd ? occurrence.end : dayEnd;
+            if (start >= clippedEnd) return [];
+            const minutes = Math.max((clippedEnd.getTime() - start.getTime()) / 60_000, MIN_BLOCK_MINUTES);
+            return [{ occurrence, start, end: new Date(start.getTime() + minutes * 60_000), top: start.getMinutes(), height: minutes }];
+          }),
+        );
+      }),
+    [weekDays, weekOccurrences],
+  );
 
-    return weekOccurrences.flatMap((occurrence) => {
-      const start = occurrence.start > dayStart ? occurrence.start : dayStart;
-      const end = occurrence.end < dayEnd ? occurrence.end : dayEnd;
-      if (start >= end || start.getHours() !== hour || start.getDate() !== dayStart.getDate()) return [];
-      const minutes = (end.getTime() - start.getTime()) / 60_000;
-      return [{ occurrence, start, top: start.getMinutes(), height: Math.max(minutes, 20) }];
-    });
-  };
+  const getBlocksForSlot = (dayIndex: number, hour: number) =>
+    blocksByDay[dayIndex].filter((block) => block.start.getHours() === hour);
 
   const previousWeek = () => {
     const newDate = new Date(currentDate);
@@ -193,6 +209,8 @@ export function CalendarView() {
         </div>
       </div>
 
+      {error && <StaleDataBanner error={error} stale={history !== null} onRetry={retry} />}
+
       {/* Calendar Grid */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -228,8 +246,8 @@ export function CalendarView() {
             {/* Time Slots */}
             <div className="max-h-[600px] overflow-y-auto">
               {HOURS.map((hour) => (
-                <div key={hour} className="grid grid-cols-8 border-b border-gray-200">
-                  <div className="p-3 text-xs text-gray-600 bg-gray-50 border-r border-gray-200">
+                <div key={hour} className="grid grid-cols-8">
+                  <div className="p-3 text-xs text-gray-600 bg-gray-50 border-r border-b border-gray-200">
                     {hour.toString().padStart(2, '0')}:00
                   </div>
                   {weekDays.map((_, dayIndex) => {
@@ -237,37 +255,41 @@ export function CalendarView() {
                     return (
                       <div
                         key={dayIndex}
-                        className="relative border-l border-gray-200 min-h-[60px] hover:bg-gray-50 cursor-pointer group"
+                        className="relative border-l border-b border-gray-200 min-h-[60px] hover:bg-gray-50 cursor-pointer group"
                         onClick={() => handleSlotClick(dayIndex, hour)}
                         data-testid={`slot-${dayIndex}-${hour}`}
                       >
-                        {slotBlocks.map(({ occurrence, start, top, height }) => (
-                          <div
-                            key={`${occurrence.key}-${start.getTime()}`}
-                            className={`absolute left-0 right-0 mx-1 z-10 rounded px-2 py-1 text-xs text-white overflow-hidden ${
-                              occurrence.activity ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
-                            } ${occurrence.status === 'skipped' ? 'opacity-60' : ''}`}
-                            style={{
-                              top: `${(top / 60) * HOUR_HEIGHT_PX}px`,
-                              height: `${(height / 60) * HOUR_HEIGHT_PX}px`,
-                              backgroundColor: getActivityColor(occurrence),
-                            }}
-                            title={occurrence.activity ? undefined : 'Deleted activity (history)'}
-                            onClick={(e) => handleActivityClick(occurrence, e)}
-                          >
-                            <div className={`font-medium truncate ${occurrence.status === 'skipped' ? 'line-through' : ''}`}>
-                              {occurrence.status === 'done' && <span aria-hidden="true">✓ </span>}
-                              <span>{occurrence.title}</span>
+                        {slotBlocks.map(({ occurrence, start, top, height, lane, lanes }) => {
+                          const heightPx = (height / 60) * HOUR_HEIGHT_PX;
+                          const timeLine = `${occurrence.start.toLocaleTimeString('en-US', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}${STATUS_LABELS[occurrence.status] ? ` · ${STATUS_LABELS[occurrence.status]}` : ''}`;
+                          const showsTimeLine = heightPx >= TIME_LINE_FROM_PX;
+                          return (
+                            <div
+                              key={`${occurrence.key}-${start.getTime()}`}
+                              className={`absolute z-10 rounded px-2 ${heightPx < NO_PADDING_BELOW_PX ? 'py-0' : 'py-1'} text-xs text-white overflow-hidden ${
+                                occurrence.activity ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
+                              } ${occurrence.status === 'skipped' ? 'opacity-60' : ''}`}
+                              style={{
+                                top: `${(top / 60) * HOUR_HEIGHT_PX}px`,
+                                height: `${heightPx}px`,
+                                left: `calc(${(lane / lanes) * 100}% + 4px)`,
+                                width: `calc(${100 / lanes}% - 8px)`,
+                                backgroundColor: getActivityColor(occurrence),
+                              }}
+                              title={`${occurrence.title}\n${timeLine}${occurrence.activity ? '' : '\nDeleted activity (history)'}`}
+                              onClick={(e) => handleActivityClick(occurrence, e)}
+                            >
+                              <div className={`font-medium truncate ${occurrence.status === 'skipped' ? 'line-through' : ''}`}>
+                                {occurrence.status === 'done' && <span aria-hidden="true">✓ </span>}
+                                <span>{occurrence.title}</span>
+                              </div>
+                              {showsTimeLine && <div className="text-[10px] opacity-90 truncate">{timeLine}</div>}
                             </div>
-                            <div className="text-[10px] opacity-90">
-                              {occurrence.start.toLocaleTimeString('en-US', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                              {STATUS_LABELS[occurrence.status] && ` · ${STATUS_LABELS[occurrence.status]}`}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                           <Plus className="w-4 h-4 text-gray-400" />
                         </div>

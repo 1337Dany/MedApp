@@ -10,11 +10,13 @@ public class OccurrencesQueryValidator : AbstractValidator<OccurrencesQuery>
     public OccurrencesQueryValidator()
     {
         RuleFor(x => x.From)
-            .NotEmpty();
+            .NotEmpty()
+            .Must(ActivityDates.IsInRange).WithMessage(ActivityDates.RangeMessage);
 
         RuleFor(x => x.To)
             .GreaterThan(x => x.From)
-            .WithMessage("'To' must be after 'From'.");
+            .WithMessage("'To' must be after 'From'.")
+            .Must(ActivityDates.IsInRange).WithMessage(ActivityDates.RangeMessage);
 
         RuleFor(x => x)
             .Must(x => x.To - x.From <= TimeSpan.FromDays(MaxRangeDays))
