@@ -28,4 +28,7 @@ public class ActivityOccurrence
     public int DurationMinutes { get; set; }
 
     public Status Status { get; set; }
+
+    // One occurrence of a series that the student deleted; the series no longer has it.
+    public bool IsRemoved { get; set; }
 }

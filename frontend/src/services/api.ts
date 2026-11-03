@@ -153,7 +153,12 @@ export const activitiesAPI = {
         json('PATCH', { status: toBackendStatus(status), occurrenceStart: occurrenceStart?.toISOString() ?? null }),
       ),
     ),
-  remove: (id: string) => authenticatedFetch<void>(`/activities/${id}`, { method: 'DELETE' }),
+  // With occurrenceStart, a recurring activity loses that one occurrence only.
+  remove: (id: string, occurrenceStart?: Date) =>
+    authenticatedFetch<void>(
+      `/activities/${id}${occurrenceStart ? `?occurrenceStart=${encodeURIComponent(occurrenceStart.toISOString())}` : ''}`,
+      { method: 'DELETE' },
+    ),
 };
 
 // Study planner -> PlanningController (rules: docs/PLANNING.md)

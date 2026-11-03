@@ -32,6 +32,8 @@ interface AppState {
   // Marks one occurrence of a recurring activity; views re-read the occurrences on historyVersion.
   setOccurrenceStatus: (id: string, start: Date, status: ActivityStatus) => Promise<void>;
   deleteActivity: (id: string) => Promise<void>;
+  // Deletes one occurrence of a recurring activity; the series and its other occurrences stay.
+  deleteSeriesOccurrence: (id: string, start: Date) => Promise<void>;
   // Removes a past entry that no longer belongs to an activity.
   deleteOccurrence: (id: string) => Promise<void>;
 
@@ -153,6 +155,11 @@ export const useStore = create<AppState>((set, get) => ({
     await activitiesAPI.remove(id);
     set((state) => ({ activities: state.activities.filter((a) => a.id !== id), historyVersion: state.historyVersion + 1 }));
     void get().refreshDerived();
+  },
+
+  deleteSeriesOccurrence: async (id, start) => {
+    await activitiesAPI.remove(id, start);
+    set((state) => ({ historyVersion: state.historyVersion + 1 }));
   },
 
   deleteOccurrence: async (id) => {

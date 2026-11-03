@@ -35,7 +35,8 @@ What a change does to the history:
 
 | Change | History |
 |---|---|
-| Edit a series (time, days, duration, title, type, subject) | Past occurrences keep their old values; the change applies from now on. Changing *when* it occurs (start, frequency, days, end date) drops the marks of its future occurrences. |
+| Edit a series (time, days, duration, title, type, subject) | Past occurrences keep their old values; the change applies from now on. Changing *when* it occurs (start, frequency, days, end date) drops the marks of its future occurrences and brings back future occurrences deleted one by one. |
+| Delete one occurrence of a series | Only that occurrence goes, past or coming: `DELETE /api/activities/{id}?occurrenceStart=` (its UTC start). The series and its other occurrences stay. A one-off activity created later at that time is shown. |
 | Turn a series into a one-off activity | The past occurrences stay as history without an activity (each can be deleted on its own: `DELETE /api/occurrences/{id}`, a click on the block in the Calendar). The one in the same minute as the one-off's start becomes its own entry, so it does not count twice, and the one-off takes that occurrence's mark (also from a future one) unless the form chose another status. |
 | Turn a past one-off activity into a series | Its status stays as the mark of the occurrence at that start; the rest of the series is unmarked. |
 | Edit a one-off activity, or change its status | Its history entry is replaced by the new values (it is a correction of that one event). |
@@ -48,6 +49,9 @@ already has an entry for today (the occurrence at the old time ran): a day count
 Known limit: moving the start of a running series to an earlier date does not add occurrences to the earlier days
 that had already passed, only to today.
 
+Known limit: the study planner and its workload warnings expand series from their pattern, so an occurrence deleted
+on its own still counts as busy time there.
+
 ## Status per occurrence
 
 A one-off activity has one status. A series is marked per occurrence: `PATCH /api/activities/{id}/status`
@@ -56,7 +60,8 @@ and is rejected when the series has no occurrence at that time. The series' own 
 unmarked occurrence of a series counts as "scheduled", unless the whole series is "skipped". Marking a study
 occurrence on a topic as done counts as a review of the topic, like a one-off session (docs/PLANNING.md).
 
-In the UI, clicking an occurrence in the Calendar opens the series with "This occurrence" buttons and "Delete series";
+In the UI, clicking an occurrence in the Calendar opens the series with "This occurrence" buttons and "Delete", which
+asks whether only this occurrence or the whole series goes (from the Activities list, "Delete series" deletes it all);
 the Calendar shows the marks on the blocks. It draws only what this endpoint returns and expands nothing itself. Blocks that overlap on a day are drawn side by side. The app reads the occurrences
 again after every successful write that can change them. When such a read fails, the Calendar and Analytics keep what
 they have and show a banner with "Try again".

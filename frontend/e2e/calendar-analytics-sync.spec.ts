@@ -444,7 +444,9 @@ test.describe('Calendar changes reach Analytics', () => {
     await analytics(page);
     await expectReport(page, { planned: String(4 + laterDaysThisWeek), sessions: 4 });
     await calendar(page);
-    await (await openBlock(page, day, past, 'Series')).getByRole('button', { name: 'Delete series' }).click();
+    const form = await openBlock(page, day, past, 'Series');
+    await form.getByRole('button', { name: 'Delete', exact: true }).click();
+    await form.getByRole('button', { name: 'The whole series' }).click();
     await expect(modal(page, 'Edit Activity')).toHaveCount(0);
     await analytics(page);
     await expectReport(page, { planned: '0', sessions: 0 });
@@ -777,8 +779,8 @@ test.describe('The calendar itself', () => {
     await expect.soft(blocks(page).filter({ hasText: 'Series' })).toHaveCount(Math.min(7, 10 - day));
     await shot(page, 'previous-week');
     await slot(page, day, past).getByText('Series').click();
-    page.once('dialog', (dialog) => dialog.accept());
-    await modal(page, 'Edit Activity').getByRole('button', { name: 'Delete series' }).click();
+    await modal(page, 'Edit Activity').getByRole('button', { name: 'Delete', exact: true }).click();
+    await modal(page, 'Edit Activity').getByRole('button', { name: 'The whole series' }).click();
     await expect(blocks(page).filter({ hasText: 'Series' })).toHaveCount(0);
     await page.reload();
     await calendar(page);

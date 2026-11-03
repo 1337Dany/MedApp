@@ -1,6 +1,7 @@
 using FluentValidation;
 using MedApp.Services.DTOs.Activities;
 using MedApp.Services.Services;
+using MedApp.Services.Validation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -112,16 +113,25 @@ public class ActivitiesController : ApiControllerBase
         return result.Succeeded ? Ok(result.Value) : MapFailure(result);
     }
 
+    // With occurrenceStart (the occurrence's UTC start), only that occurrence of a recurring activity is deleted.
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    public async Task<IActionResult> Delete(Guid id, [FromQuery] DateTime? occurrenceStart, CancellationToken ct)
     {
         if (!TryGetUserId(out var userId))
         {
             return Unauthorized();
         }
 
-        return await _activities.DeleteAsync(id, userId, ct) ? NoContent() : NotFound();
+        if (occurrenceStart is { } start && !ActivityDates.IsInRange(start))
+        {
+            ModelState.AddModelError(nameof(occurrenceStart), ActivityDates.RangeMessage);
+            return ValidationProblem(ModelState);
+        }
+
+        var result = await _activities.DeleteAsync(id, userId, occurrenceStart, ct);
+        return result.Succeeded ? NoContent() : MapFailure(result);
     }
 }

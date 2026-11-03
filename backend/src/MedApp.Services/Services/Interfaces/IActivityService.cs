@@ -13,5 +13,7 @@ public interface IActivityService
     // With occurrenceStart, a recurring activity gets the status for that one occurrence only.
     Task<ServiceResult<ActivityDto>> UpdateStatusAsync(Guid activityId, Guid userId, Status status,
         DateTime? occurrenceStart = null, CancellationToken ct = default);
-    Task<bool> DeleteAsync(Guid activityId, Guid userId, CancellationToken ct = default);
+    // With occurrenceStart, a recurring activity loses that one occurrence only; a one-off activity is deleted.
+    Task<ServiceResult<bool>> DeleteAsync(Guid activityId, Guid userId, DateTime? occurrenceStart = null,
+        CancellationToken ct = default);
 }

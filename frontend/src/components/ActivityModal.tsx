@@ -24,8 +24,11 @@ interface ActivityModalProps {
 }
 
 export function ActivityModal({ activity, occurrence, initialDate, initialHour, onClose }: ActivityModalProps) {
-  const { addActivity, updateActivity, deleteActivity, setOccurrenceStatus, subjects, topics } = useStore();
+  const { addActivity, updateActivity, deleteActivity, deleteSeriesOccurrence, setOccurrenceStatus, subjects, topics } =
+    useStore();
   const [occurrenceStatus, setOccurrenceStatusValue] = useState(occurrence?.status);
+  // Deleting an occurrence of a series first asks whether only it or the whole series goes.
+  const [choosingDelete, setChoosingDelete] = useState(false);
 
   const [formData, setFormData] = useState({
     title: activity?.title || '',
@@ -118,18 +121,25 @@ export function ActivityModal({ activity, occurrence, initialDate, initialHour, 
     }
   };
 
+  const runDelete = async (remove: () => Promise<void>) => {
+    try {
+      await remove();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete the activity.');
+    }
+  };
+
   const handleDelete = async () => {
-    const question = activity?.recurring
+    if (!activity) return;
+    if (activity.recurring && occurrence) {
+      setChoosingDelete(true);
+      return;
+    }
+    const question = activity.recurring
       ? `Delete the whole series "${activity.title}"? All its occurrences, past ones included, disappear from the calendar and analytics.`
       : 'Are you sure you want to delete this activity?';
-    if (activity && confirm(question)) {
-      try {
-        await deleteActivity(activity.id);
-        onClose();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not delete the activity.');
-      }
-    }
+    if (confirm(question)) await runDelete(() => deleteActivity(activity.id));
   };
 
   const toggleRecurrenceDay = (day: number) => {
@@ -460,7 +470,7 @@ export function ActivityModal({ activity, occurrence, initialDate, initialHour, 
                 onClick={handleDelete}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
-                {activity.recurring ? 'Delete series' : 'Delete'}
+                {activity.recurring && !occurrence ? 'Delete series' : 'Delete'}
               </button>
             )}
             <button
@@ -471,6 +481,38 @@ export function ActivityModal({ activity, occurrence, initialDate, initialHour, 
               Cancel
             </button>
           </div>
+
+          {choosingDelete && activity && occurrence && (
+            <div role="group" aria-label="What to delete" className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-900">
+                Delete only this occurrence, or the whole series "{activity.title}"? The whole series also disappears
+                from past weeks and the analytics.
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => runDelete(() => deleteSeriesOccurrence(activity.id, occurrence.start))}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700"
+                >
+                  Only this occurrence
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runDelete(() => deleteActivity(activity.id))}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-white text-red-700 border border-red-300 hover:bg-red-100"
+                >
+                  The whole series
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChoosingDelete(false)}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                >
+                  Keep it
+                </button>
+              </div>
+            </div>
+          )}
         </form>
       </div>
     </div>

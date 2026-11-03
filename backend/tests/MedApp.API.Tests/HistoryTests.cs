@@ -109,6 +109,43 @@ public class HistoryTests
     }
 
     [Fact]
+    public async Task One_occurrence_of_a_series_can_be_deleted_and_the_rest_of_the_series_stays()
+    {
+        var client = await TestClient.CreateUserClientAsync(_factory);
+        var start = Today.AddDays(-3).AddHours(6);
+        var series = await CreateAsync(client, Activity(start, Daily));
+        var yesterday = start.AddDays(2);
+        var tomorrow = start.AddDays(4);
+        string Occurrence(DateTime at) => $"/api/activities/{series.Id}?occurrenceStart={Uri.EscapeDataString(at.ToString("O"))}";
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(Occurrence(yesterday))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(Occurrence(tomorrow))).StatusCode);
+
+        // Not an occurrence, already deleted, or out of range.
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.DeleteAsync(Occurrence(yesterday.AddHours(1)))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.DeleteAsync(Occurrence(tomorrow))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PatchJsonAsync($"/api/activities/{series.Id}/status",
+            new { status = "done", occurrenceStart = tomorrow.ToString("O") })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.DeleteAsync($"/api/activities/{series.Id}?occurrenceStart=0001-01-01T00:00:00Z")).StatusCode);
+
+        // A new title keeps the deletions; the series itself stays.
+        (await client.PutJsonAsync($"/api/activities/{series.Id}", Activity(start, Daily, "Renamed"))).EnsureSuccessStatusCode();
+        var occurrences = await OccurrencesAsync(client, Today.AddDays(-7), Today.AddDays(3));
+        Assert.Equal(Enumerable.Range(0, 6).Select(i => start.AddDays(i)).Where(s => s != yesterday && s != tomorrow),
+            occurrences.Select(o => o.StartTime));
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/activities/{series.Id}")).StatusCode);
+
+        // A one-off at the time of the deleted occurrence is shown.
+        (await client.PutJsonAsync($"/api/activities/{series.Id}", OneOff(yesterday))).EnsureSuccessStatusCode();
+        Assert.Equal(series.Id, Assert.Single(await OccurrencesAsync(client, yesterday, yesterday.AddMinutes(1))).ActivityId);
+
+        // With an occurrence start, a one-off activity is deleted as a whole.
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(Occurrence(yesterday))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/activities/{series.Id}")).StatusCode);
+    }
+
+    [Fact]
     public async Task Deleting_an_activity_or_subject_removes_all_its_occurrences()
     {
         var client = await TestClient.CreateUserClientAsync(_factory);

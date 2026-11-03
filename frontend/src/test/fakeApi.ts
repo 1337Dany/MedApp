@@ -53,6 +53,8 @@ class FakeApi {
   requests: RecordedRequest[] = [];
   // Statuses of single occurrences of recurring activities: `${activityId}|${start ISO}` -> status.
   occurrenceMarks = new Map<string, OccurrenceDto['status']>();
+  // Single occurrences deleted from recurring activities, same keys.
+  removedOccurrences = new Set<string>();
   // Sessions the planner creates per eligible subject on POST /planning/generate.
   sessionsPerSubject = 2;
   private tokens = new Map<string, string>(); // access or refresh token -> user id
@@ -67,6 +69,7 @@ class FakeApi {
     this.analytics = emptyAnalytics();
     this.requests = [];
     this.occurrenceMarks.clear();
+    this.removedOccurrences.clear();
     this.sessionsPerSubject = 2;
     this.tokens.clear();
     this.failures = [];
@@ -185,7 +188,7 @@ class FakeApi {
   private occurrences(user: FakeUser, from: Date, to: Date): OccurrenceDto[] {
     const own = this.activities.filter((a) => a.userId === user.id);
     return expandOccurrences(own.map((a) => fromActivityDto(this.activityDto(a))), from, to)
-      .filter((o) => o.start >= from)
+      .filter((o) => o.start >= from && !this.removedOccurrences.has(`${o.activity.id}|${o.start.toISOString()}`))
       .map(({ activity, start }) => {
         const dto = own.find((a) => a.id === activity.id)!;
         const unmarked = dto.isRecurring ? (dto.status === 'skipped' ? 'skipped' : 'scheduled') : dto.status;
@@ -410,11 +413,20 @@ class FakeApi {
       }
       return HttpResponse.json(this.activityDto(activity));
     }),
-    this.route('delete', '/activities/:id', ({ user, params }) => {
-      if (!this.activities.some((a) => a.id === params.id && a.userId === user.id)) {
-        return new HttpResponse(null, { status: 404 });
+    this.route('delete', '/activities/:id', ({ user, params, url }) => {
+      const activity = this.activities.find((a) => a.id === params.id && a.userId === user.id);
+      if (!activity) return new HttpResponse(null, { status: 404 });
+      const occurrenceStart = url.searchParams.get('occurrenceStart');
+      if (occurrenceStart && activity.isRecurring) {
+        const start = new Date(occurrenceStart);
+        const matches = this.occurrences(user, start, new Date(start.getTime() + 1000)).some(
+          (o) => o.activityId === activity.id && o.startTime === start.toISOString(),
+        );
+        if (!matches) return problem(400, 'Invalid reference');
+        this.removedOccurrences.add(`${activity.id}|${start.toISOString()}`);
+      } else {
+        this.activities = this.activities.filter((a) => a.id !== params.id);
       }
-      this.activities = this.activities.filter((a) => a.id !== params.id);
       return new HttpResponse(null, { status: 204 });
     }),
 

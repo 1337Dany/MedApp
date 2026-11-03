@@ -32,8 +32,12 @@ public interface IActivityHistoryService
     Task RecordTodayOfMovedSeriesAsync(Activity series, CancellationToken ct = default);
 
     // Sets the status of one occurrence of a series (does not save) and returns the previous one; null when the
-    // series has no occurrence there.
+    // series has no occurrence there (a deleted one included).
     Task<Status?> SetOccurrenceStatusAsync(Activity series, DateTime startUtc, Status status, CancellationToken ct = default);
+
+    // Deletes one occurrence of a series, past or coming (does not save); the series and its other occurrences stay.
+    // False when the series has no occurrence there. Changing when the series occurs brings back deleted coming ones.
+    Task<bool> RemoveOccurrenceAsync(Activity series, DateTime startUtc, CancellationToken ct = default);
 
     // Before an activity is deleted (does not save): removes all its occurrences, past ones included.
     Task ForgetActivityAsync(Activity activity, CancellationToken ct = default);

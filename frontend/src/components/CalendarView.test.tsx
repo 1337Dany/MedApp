@@ -211,10 +211,56 @@ describe('CalendarView', () => {
 
     await events.click(within(await screen.findByTestId('slot-1-9')).getByText('Daily lecture'));
     const modal = await findModal('Edit Activity');
-    await events.click(within(modal).getByRole('button', { name: 'Delete series' }));
+    await events.click(within(modal).getByRole('button', { name: 'Delete' }));
+    await events.click(within(modal).getByRole('button', { name: 'The whole series' }));
 
     await waitFor(() => expect(screen.queryByText('Daily lecture')).not.toBeInTheDocument());
     expect(fakeApi.activities).toHaveLength(0);
+  });
+
+  it('deleting only one occurrence of a series keeps the series and its other occurrences', async () => {
+    const sunday = thisSunday();
+    const { events } = await openCalendar((user) => {
+      fakeApi.addActivity(user.id, {
+        title: 'Daily lecture',
+        startTime: atLocal(addDays(sunday, -14), 9),
+        isRecurring: true,
+        recurrence: { frequency: 'daily', daysOfWeek: [], until: null },
+      });
+    });
+
+    await events.click(within(await screen.findByTestId('slot-3-9')).getByText('Daily lecture'));
+    const modal = await findModal('Edit Activity');
+    await events.click(within(modal).getByRole('button', { name: 'Delete' }));
+    await events.click(within(modal).getByRole('button', { name: 'Only this occurrence' }));
+
+    await waitFor(() => expect(screen.getByTestId('slot-3-9')).not.toHaveTextContent('Daily lecture'));
+    expect(screen.getAllByText('Daily lecture')).toHaveLength(6);
+    expect(fakeApi.activities).toHaveLength(1);
+    expect(fakeApi.writes()[0]).toMatchObject({
+      method: 'DELETE',
+      path: expect.stringContaining(`occurrenceStart=${encodeURIComponent(atLocal(addDays(sunday, 3), 9))}`),
+    });
+  });
+
+  it('"Keep it" closes the choice without deleting anything', async () => {
+    const sunday = thisSunday();
+    const { events } = await openCalendar((user) => {
+      fakeApi.addActivity(user.id, {
+        title: 'Daily lecture',
+        startTime: atLocal(addDays(sunday, -14), 9),
+        isRecurring: true,
+        recurrence: { frequency: 'daily', daysOfWeek: [], until: null },
+      });
+    });
+
+    await events.click(within(await screen.findByTestId('slot-3-9')).getByText('Daily lecture'));
+    const modal = await findModal('Edit Activity');
+    await events.click(within(modal).getByRole('button', { name: 'Delete' }));
+    await events.click(within(modal).getByRole('button', { name: 'Keep it' }));
+
+    expect(within(modal).queryByRole('button', { name: 'Only this occurrence' })).not.toBeInTheDocument();
+    expect(fakeApi.writes()).toHaveLength(0);
   });
 
   it('draws nothing of its own when the server has not answered', async () => {

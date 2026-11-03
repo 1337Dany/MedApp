@@ -193,28 +193,43 @@ public class ActivityService : IActivityService
         return ServiceResult<ActivityDto>.Success(_mapper.Map<ActivityDto>(activity));
     }
 
-    public async Task<bool> DeleteAsync(Guid activityId, Guid userId, CancellationToken ct = default)
+    public async Task<ServiceResult<bool>> DeleteAsync(Guid activityId, Guid userId, DateTime? occurrenceStart = null,
+        CancellationToken ct = default)
     {
         await using var transaction = await _history.BeginWriteAsync(userId, ct);
 
         var activity = await _repository.GetByIdAsync(activityId, userId, ct);
         if (activity is null)
         {
-            return false;
+            return ServiceResult<bool>.Failure(ServiceError.NotFound, "Activity not found.");
         }
 
-        // A deleted activity leaves the calendar and the analytics completely, its past included.
-        await _history.ForgetActivityAsync(activity, ct);
-
-        if (activity.RecurringOptions is not null)
+        // One occurrence of a series goes on its own; the series and its other occurrences stay.
+        if (occurrenceStart is not null && OccurrenceExpander.IsSeries(activity))
         {
-            await _recurringOptions.DeleteAsync(activity.RecurringOptions, ct);
+            await _history.RecordPastAsync(userId, ct);
+            if (!await _history.RemoveOccurrenceAsync(activity, occurrenceStart.Value, ct))
+            {
+                return ServiceResult<bool>.Failure(ServiceError.InvalidReference,
+                    "The activity has no occurrence at this time.");
+            }
+        }
+        else
+        {
+            // A deleted activity leaves the calendar and the analytics completely, its past included.
+            await _history.ForgetActivityAsync(activity, ct);
+
+            if (activity.RecurringOptions is not null)
+            {
+                await _recurringOptions.DeleteAsync(activity.RecurringOptions, ct);
+            }
+
+            await _repository.DeleteAsync(activity, ct);
         }
 
-        await _repository.DeleteAsync(activity, ct);
         await _uow.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return true;
+        return ServiceResult<bool>.Success(true);
     }
 
     // A finished session on a topic is a review with the topic's current rating; a partial one only

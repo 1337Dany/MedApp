@@ -42,22 +42,28 @@ public class ActivityHistoryService : IActivityHistoryService
         await RecordPastAsync(userId, nowUtc, zone, ct);
 
         var rows = await _occurrences.GetByUserIdAsync(userId, fromUtc, toUtc, ct);
-        var result = _mapper.Map<List<OccurrenceDto>>(rows.Where(o => o.StartTime < nowUtc));
+        var result = _mapper.Map<List<OccurrenceDto>>(rows.Where(o => o.StartTime < nowUtc && !o.IsRemoved));
 
         if (toUtc > nowUtc)
         {
             var liveFrom = fromUtc > nowUtc ? fromUtc : nowUtc;
             var marks = rows
                 .Where(o => o.StartTime >= nowUtc && o.ActivityId is not null)
-                .ToDictionary(o => (o.ActivityId!.Value, o.StartTime), o => o.Status);
+                .ToDictionary(o => (o.ActivityId!.Value, o.StartTime));
 
             foreach (var activity in await _activities.GetByUserIdAsync(userId, liveFrom, toUtc, ct))
             {
                 foreach (var start in OccurrenceExpander.StartsUtc(activity, liveFrom, toUtc, zone))
                 {
+                    var mark = marks.GetValueOrDefault((activity.ActivityId, start));
+                    if (mark?.IsRemoved == true)
+                    {
+                        continue;
+                    }
+
                     var occurrence = _mapper.Map<OccurrenceDto>(activity);
                     occurrence.StartTime = start;
-                    occurrence.Status = marks.GetValueOrDefault((activity.ActivityId, start), OccurrenceExpander.DefaultStatus(activity));
+                    occurrence.Status = mark?.Status ?? OccurrenceExpander.DefaultStatus(activity);
                     result.Add(occurrence);
                 }
             }
@@ -85,8 +91,9 @@ public class ActivityHistoryService : IActivityHistoryService
 
         foreach (var row in await _occurrences.GetByActivityIdsAsync([activity.ActivityId], ct: ct))
         {
-            // The form drops seconds, so the same occurrence can come back a few seconds earlier.
-            if (wasSeries != staysSeries && newStartUtc is { } newStart && SameMinute(row.StartTime, newStart))
+            // The form drops seconds, so the same occurrence can come back a few seconds earlier. A deleted occurrence
+            // is not linked to the new start: the activity there is shown.
+            if (wasSeries != staysSeries && !row.IsRemoved && newStartUtc is { } newStart && SameMinute(row.StartTime, newStart))
             {
                 if (wasSeries && row.Status != OccurrenceExpander.DefaultStatus(activity))
                 {
@@ -142,6 +149,36 @@ public class ActivityHistoryService : IActivityHistoryService
     public async Task<Status?> SetOccurrenceStatusAsync(Activity series, DateTime startUtc, Status status,
         CancellationToken ct = default)
     {
+        var row = await FindOccurrenceAsync(series, startUtc, ct);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var previous = row.Status;
+        row.Status = status;
+        return previous;
+    }
+
+    // Limit: the planner and its workload warnings still count the deleted occurrence as busy time, because they
+    // expand the series from its pattern (PlanningService.BuildContextAsync). Upgrade: pass the removed starts into
+    // TimetableEntry and skip them in RecurrenceExpander.
+    public async Task<bool> RemoveOccurrenceAsync(Activity series, DateTime startUtc, CancellationToken ct = default)
+    {
+        var row = await FindOccurrenceAsync(series, startUtc, ct);
+        if (row is null)
+        {
+            return false;
+        }
+
+        row.IsRemoved = true;
+        return true;
+    }
+
+    // The history row of one occurrence of a series; a coming occurrence gets one. Null when the series has no
+    // occurrence there, also when it was deleted.
+    private async Task<ActivityOccurrence?> FindOccurrenceAsync(Activity series, DateTime startUtc, CancellationToken ct)
+    {
         // Browsers send milliseconds; the stored times may be finer.
         var from = ToUtc(startUtc).AddSeconds(-1);
         var to = from.AddSeconds(2);
@@ -162,9 +199,7 @@ public class ActivityHistoryService : IActivityHistoryService
             await _occurrences.AddAsync(row, ct);
         }
 
-        var previous = row.Status;
-        row.Status = status;
-        return previous;
+        return row.IsRemoved ? null : row;
     }
 
     public async Task ForgetActivityAsync(Activity activity, CancellationToken ct = default)
