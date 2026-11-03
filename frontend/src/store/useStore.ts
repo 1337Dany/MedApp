@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Activity, ActivityStatus, Subject, Topic, OverloadWarning } from '../types';
-import { activitiesAPI, planningAPI, subjectsAPI, topicsAPI } from '../services/api';
+import { activitiesAPI, occurrencesAPI, planningAPI, subjectsAPI, topicsAPI } from '../services/api';
 
 // Server data for the signed-in user. Every action writes through to the API first and updates
 // local state only with what the server returned, so a failed call leaves the UI unchanged
@@ -32,6 +32,8 @@ interface AppState {
   // Marks one occurrence of a recurring activity; views re-read the occurrences on historyVersion.
   setOccurrenceStatus: (id: string, start: Date, status: ActivityStatus) => Promise<void>;
   deleteActivity: (id: string) => Promise<void>;
+  // Removes a past entry that no longer belongs to an activity.
+  deleteOccurrence: (id: string) => Promise<void>;
 
   // Subject actions
   addSubject: (subject: Omit<Subject, 'id'>) => Promise<Subject>;
@@ -151,6 +153,11 @@ export const useStore = create<AppState>((set, get) => ({
     await activitiesAPI.remove(id);
     set((state) => ({ activities: state.activities.filter((a) => a.id !== id), historyVersion: state.historyVersion + 1 }));
     void get().refreshDerived();
+  },
+
+  deleteOccurrence: async (id) => {
+    await occurrencesAPI.remove(id);
+    set((state) => ({ historyVersion: state.historyVersion + 1 }));
   },
 
   addSubject: async (subject) => {

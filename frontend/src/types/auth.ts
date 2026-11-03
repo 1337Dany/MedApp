@@ -16,6 +16,8 @@ export interface User {
   dateOfBirth: string; // YYYY-MM-DD
   dataPermission: boolean;
   role: UserRole;
+  /** The first-visit choice (demo data or an empty account) has been made. */
+  setupCompleted: boolean;
 }
 
 export interface AuthState {

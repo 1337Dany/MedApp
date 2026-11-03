@@ -11,8 +11,7 @@ const signInButton = () => screen.getByRole('button', { name: 'Sign In' });
 describe('AuthModal', () => {
   describe('Sign In', () => {
     it('signs in with valid credentials and opens the dashboard', async () => {
-      const account = fakeApi.addUser({ email: 'jane@example.com', password: 'Secret123' });
-      localStorage.setItem(`medapp.setupDone.${account.id}`, '1');
+      fakeApi.addUser({ email: 'jane@example.com', password: 'Secret123', setupCompleted: true });
       const { events } = renderSignedOut();
 
       await events.type(field('Email Address *'), 'jane@example.com');

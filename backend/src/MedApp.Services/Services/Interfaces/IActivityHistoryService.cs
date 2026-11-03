@@ -20,8 +20,8 @@ public interface IActivityHistoryService
     Task RecordPastAsync(Guid userId, CancellationToken ct = default);
 
     // Before the activity is changed or deleted (does not save): a one-off activity leaves the history (it is
-    // recorded again with its new values), a series drops the marks of its future occurrences and, when it stops
-    // being a series, keeps its past occurrences as detached history. When it turns from one into the other, the
+    // recorded again with its new values), a series drops the marks of its future occurrences and, when it turns
+    // into a one-off, keeps its past occurrences as detached history. When it turns from one into the other, the
     // past entry in the same minute as newStartUtc stays linked as the occurrence at the new start: a one-off's status
     // becomes the mark of that occurrence. Returns the mark a series had on the occurrence at newStartUtc, if any.
     Task<Status?> ReleaseAsync(Activity activity, bool staysSeries, DateTime? newStartUtc = null, CancellationToken ct = default);
@@ -35,6 +35,12 @@ public interface IActivityHistoryService
     // series has no occurrence there.
     Task<Status?> SetOccurrenceStatusAsync(Activity series, DateTime startUtc, Status status, CancellationToken ct = default);
 
-    // Before a subject is deleted (does not save): drops the marks of future occurrences of its series.
-    Task ReleaseSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default);
+    // Before an activity is deleted (does not save): removes all its occurrences, past ones included.
+    Task ForgetActivityAsync(Activity activity, CancellationToken ct = default);
+
+    // Before a subject is deleted (does not save): removes the occurrences of its activities and its detached ones.
+    Task ForgetSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default);
+
+    // Removes one history entry that has no activity any more; false when the user has no such entry.
+    Task<bool> DeleteDetachedOccurrenceAsync(Guid occurrenceId, Guid userId, CancellationToken ct = default);
 }

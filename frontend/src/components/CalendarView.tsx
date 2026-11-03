@@ -4,7 +4,6 @@ import { useStore } from '../store/useStore';
 import { Activity, ActivityStatus, ActivityType } from '../types';
 import { ActivityModal } from './ActivityModal';
 import { addDays, startOfDay } from '../utils/dates';
-import { expandOccurrences } from '../utils/recurrence';
 import { useOccurrences } from '../hooks/useOccurrences';
 import { layoutLanes } from '../utils/calendarLayout';
 import { StaleDataBanner } from './StaleDataBanner';
@@ -22,9 +21,10 @@ const STATUS_LABELS: Record<ActivityStatus, string> = {
   skipped: 'Skipped',
 };
 
-// One block on the calendar. `activity` is missing for history of an activity that has been deleted.
+// One block on the calendar. `activity` is missing for history without an activity (a series that became a one-off).
 interface CalendarItem {
   key: string;
+  occurrenceId?: string;
   title: string;
   type: ActivityType;
   subjectId?: string;
@@ -35,7 +35,7 @@ interface CalendarItem {
 }
 
 export function CalendarView() {
-  const { activities, subjects } = useStore();
+  const { activities, subjects, deleteOccurrence } = useStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [selectedOccurrence, setSelectedOccurrence] = useState<{ start: Date; status: ActivityStatus } | null>(null);
@@ -56,42 +56,27 @@ export function CalendarView() {
   // From the day before, so an occurrence that continues past midnight into the week is drawn.
   const { occurrences: history, error, retry } = useOccurrences(addDays(weekStart, -1), addDays(weekStart, 7));
 
-  // What has started comes from the history, which keeps past weeks as they were when the schedule changes.
-  // The rest is the current schedule (recurring series expanded), with the marks of single occurrences.
-  // After a failed read the history may be behind; a one-off activity is still shown as it is now, because its
-  // history entry only mirrors it.
+  // Everything on the grid comes from the server (docs/ANALYTICS.md). An occurrence of an activity deleted a moment
+  // ago is hidden right away, also when the next read fails.
   const weekOccurrences = useMemo((): CalendarItem[] => {
-    const now = new Date();
-    const marks = new Map((history ?? []).map((o) => [`${o.activityId}|${o.start.getTime()}`, o.status]));
-    const isCurrentOneOff = (id?: string) => !!error && activities.some((a) => a.id === id && !a.recurring);
-    const live = expandOccurrences(activities, weekStart, addDays(weekStart, 7))
-      .filter((o) => !history || o.start >= now || isCurrentOneOff(o.activity.id))
-      .map(({ activity, start, end }) => ({
-        key: `${activity.id}-${start.getTime()}`,
-        title: activity.title,
-        type: activity.type,
-        subjectId: activity.subjectId,
-        start,
-        end,
-        status: activity.recurring
-          ? marks.get(`${activity.id}|${start.getTime()}`) ?? (activity.status === 'skipped' ? 'skipped' : 'scheduled')
-          : activity.status,
-        activity,
-      }));
-    const past = (history ?? [])
-      .filter((o) => o.start < now && !isCurrentOneOff(o.activityId))
-      .map((o, i) => ({
-        key: `${o.activityId ?? `deleted-${i}`}-${o.start.getTime()}`,
+    const items: CalendarItem[] = [];
+    (history ?? []).forEach((o, i) => {
+      const activity = o.activityId ? activities.find((a) => a.id === o.activityId) : undefined;
+      if (o.activityId && !activity) return;
+      items.push({
+        key: `${o.id ?? o.activityId ?? i}-${o.start.getTime()}`,
+        occurrenceId: o.id,
         title: o.title,
         type: o.type,
         subjectId: o.subjectId,
         start: o.start,
         end: o.end,
         status: o.status,
-        activity: activities.find((a) => a.id === o.activityId),
-      }));
-    return [...past, ...live];
-  }, [activities, history, error, weekStart]);
+        activity,
+      });
+    });
+    return items;
+  }, [activities, history]);
 
   // Each occurrence is drawn once per day, in the hour cell where it starts on that day (00:00 when it continues
   // from the previous day), as tall as its duration within the day. Lanes are per day, because overlapping blocks
@@ -143,10 +128,17 @@ export function CalendarView() {
     setIsModalOpen(true);
   };
 
-  // A block of a deleted activity is history only.
+  // A block without an activity has nothing to edit; it can only be deleted.
   const handleActivityClick = (item: CalendarItem, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!item.activity) return;
+    if (!item.activity) {
+      if (item.occurrenceId && confirm(`Delete this past entry of "${item.title}"?`)) {
+        deleteOccurrence(item.occurrenceId).catch((err) =>
+          alert(err instanceof Error ? err.message : 'Could not delete the entry.'),
+        );
+      }
+      return;
+    }
     setSelectedActivity(item.activity);
     setSelectedOccurrence({ start: item.start, status: item.status });
     setNewActivitySlot(null);
@@ -270,7 +262,7 @@ export function CalendarView() {
                             <div
                               key={`${occurrence.key}-${start.getTime()}`}
                               className={`absolute z-10 rounded px-2 ${heightPx < NO_PADDING_BELOW_PX ? 'py-0' : 'py-1'} text-xs text-white overflow-hidden ${
-                                occurrence.activity ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
+                                occurrence.activity ? 'cursor-pointer hover:opacity-80' : 'cursor-pointer opacity-70 hover:opacity-50'
                               } ${occurrence.status === 'skipped' ? 'opacity-60' : ''}`}
                               style={{
                                 top: `${(top / 60) * HOUR_HEIGHT_PX}px`,
@@ -279,7 +271,7 @@ export function CalendarView() {
                                 width: `calc(${100 / lanes}% - 8px)`,
                                 backgroundColor: getActivityColor(occurrence),
                               }}
-                              title={`${occurrence.title}\n${timeLine}${occurrence.activity ? '' : '\nDeleted activity (history)'}`}
+                              title={`${occurrence.title}\n${timeLine}${occurrence.activity ? '' : '\nPast entry without an activity: click to delete'}`}
                               onClick={(e) => handleActivityClick(occurrence, e)}
                             >
                               <div className={`font-medium truncate ${occurrence.status === 'skipped' ? 'line-through' : ''}`}>

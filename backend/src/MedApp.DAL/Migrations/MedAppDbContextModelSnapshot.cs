@@ -435,6 +435,9 @@ namespace MedApp.DAL.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(0);
 
+                    b.Property<bool>("SetupCompleted")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("TimeZone")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");

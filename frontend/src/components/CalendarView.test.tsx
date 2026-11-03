@@ -197,4 +197,36 @@ describe('CalendarView', () => {
     await events.click(within(banner).getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
+
+  it('deleting a recurring activity removes its blocks at once, and from the server', async () => {
+    const sunday = thisSunday();
+    const { events } = await openCalendar((user) => {
+      fakeApi.addActivity(user.id, {
+        title: 'Daily lecture',
+        startTime: atLocal(addDays(sunday, -14), 9),
+        isRecurring: true,
+        recurrence: { frequency: 'daily', daysOfWeek: [], until: null },
+      });
+    });
+
+    await events.click(within(await screen.findByTestId('slot-1-9')).getByText('Daily lecture'));
+    const modal = await findModal('Edit Activity');
+    await events.click(within(modal).getByRole('button', { name: 'Delete series' }));
+
+    await waitFor(() => expect(screen.queryByText('Daily lecture')).not.toBeInTheDocument());
+    expect(fakeApi.activities).toHaveLength(0);
+  });
+
+  it('draws nothing of its own when the server has not answered', async () => {
+    const sunday = thisSunday();
+    const { events } = await openCalendar((user) => {
+      fakeApi.addActivity(user.id, { title: 'Only on the server', startTime: atLocal(addDays(sunday, 9), 10) });
+    });
+    fakeApi.failNext('GET', /occurrences/, 500);
+
+    await events.click(screen.getByRole('button', { name: 'Next week' }));
+
+    await screen.findByRole('alert');
+    expect(screen.queryByText('Only on the server')).not.toBeInTheDocument();
+  });
 });

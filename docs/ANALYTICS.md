@@ -20,7 +20,7 @@ days), with its own title, type, subject, duration and status:
 ## Recording the history
 
 Every occurrence that has started is copied into the history with the values the activity had at that time.
-This happens before any change to the timetable (edit, status change, deletion of an activity or subject) and
+This happens before any edit or status change and
 whenever occurrences are read, so a change only ever affects the time after it. Requests of the same user that
 record the history or write to the timetable are serialized with a transaction-scoped Postgres advisory lock. A
 write (edit, status change, deletion of an activity or subject, planning) holds that lock and one transaction from
@@ -36,12 +36,11 @@ What a change does to the history:
 | Change | History |
 |---|---|
 | Edit a series (time, days, duration, title, type, subject) | Past occurrences keep their old values; the change applies from now on. Changing *when* it occurs (start, frequency, days, end date) drops the marks of its future occurrences. |
-| Turn a series into a one-off activity | The past occurrences stay as history without an activity. The one in the same minute as the one-off's start becomes its own entry, so it does not count twice, and the one-off takes that occurrence's mark (also from a future one) unless the form chose another status. |
+| Turn a series into a one-off activity | The past occurrences stay as history without an activity (each can be deleted on its own: `DELETE /api/occurrences/{id}`, a click on the block in the Calendar). The one in the same minute as the one-off's start becomes its own entry, so it does not count twice, and the one-off takes that occurrence's mark (also from a future one) unless the form chose another status. |
 | Turn a past one-off activity into a series | Its status stays as the mark of the occurrence at that start; the rest of the series is unmarked. |
 | Edit a one-off activity, or change its status | Its history entry is replaced by the new values (it is a correction of that one event). |
-| Delete a series | Its past occurrences stay, without an activity. |
-| Delete a one-off activity | Removed from the history. |
-| Delete a subject | Its activities go; what already happened stays, without the subject. |
+| Delete an activity (one-off or a whole series) | All its occurrences go, past ones included: it disappears from the calendar, the student's analytics and the teacher analytics. This cannot be undone. |
+| Delete a subject | Its activities go the same way, with their occurrences. |
 
 Moving a series to a time today that has already passed adds today's occurrence at the new time, unless the series
 already has an entry for today (the occurrence at the old time ran): a day counts once.
@@ -57,10 +56,17 @@ and is rejected when the series has no occurrence at that time. The series' own 
 unmarked occurrence of a series counts as "scheduled", unless the whole series is "skipped". Marking a study
 occurrence on a topic as done counts as a review of the topic, like a one-off session (docs/PLANNING.md).
 
-In the UI, clicking an occurrence in the Calendar opens the series with "This occurrence" buttons; the Calendar
-shows the marks on the blocks. Blocks that overlap on a day are drawn side by side. The app reads the occurrences
+In the UI, clicking an occurrence in the Calendar opens the series with "This occurrence" buttons and "Delete series";
+the Calendar shows the marks on the blocks. It draws only what this endpoint returns and expands nothing itself. Blocks that overlap on a day are drawn side by side. The app reads the occurrences
 again after every successful write that can change them. When such a read fails, the Calendar and Analytics keep what
-they have and show a banner with "Try again"; the Calendar still shows one-off activities as they are now.
+they have and show a banner with "Try again".
+
+## First visit
+
+A new student chooses between demo data and an empty account. `POST /api/onboarding/demo-data` makes the server save
+the demo subjects, topics and schedule in one transaction, placed in the browser's time zone; it is refused once the
+choice was made or when the account has data. `POST /api/onboarding/complete` records an empty start. The choice is
+stored on the user (`SetupCompleted`). Demo records are ordinary records: they can be edited and deleted.
 
 ## Analytics view
 

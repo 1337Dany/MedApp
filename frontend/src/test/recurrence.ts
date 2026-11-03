@@ -1,5 +1,5 @@
 import { Activity } from '../types';
-import { addDays, startOfDay } from './dates';
+import { addDays, startOfDay } from '../utils/dates';
 
 export interface Occurrence {
   activity: Activity;

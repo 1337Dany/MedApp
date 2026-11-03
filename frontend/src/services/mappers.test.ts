@@ -118,6 +118,7 @@ describe('mappers', () => {
       email: 'jane@example.com',
       dataPermission: true,
       role: 'user',
+      setupCompleted: true,
     });
     expect(user).toMatchObject({ role: 'student', name: 'Jane Doe' });
   });

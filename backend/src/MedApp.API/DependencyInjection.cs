@@ -74,6 +74,7 @@ public static class DependencyInjection
         services.AddScoped<IPlanningService, PlanningService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<ITeacherAnalyticsService, TeacherAnalyticsService>();
+        services.AddScoped<IOnboardingService, OnboardingService>();
 
         return services;
     }

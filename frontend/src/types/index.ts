@@ -52,7 +52,8 @@ export interface Subject {
 
 // One concrete occurrence from GET /api/occurrences: recorded history before now, the timetable after it.
 export interface OccurrenceRecord {
-  activityId?: string; // missing once the activity was deleted
+  id?: string; // the history entry; missing for a coming occurrence without one
+  activityId?: string; // missing for history without an activity (a series that became a one-off)
   subjectId?: string;
   title: string;
   type: ActivityType;

@@ -11,4 +11,5 @@ public class UserDto
     public string Email { get; set; } = null!;
     public bool DataPermission { get; set; }
     public UserRole Role { get; set; }
+    public bool SetupCompleted { get; set; }
 }

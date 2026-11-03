@@ -13,7 +13,7 @@ namespace MedApp.API.Tests;
 public class HistoryTests
 {
     private record OccurrenceDto(Guid? ActivityId, Guid? SubjectId, string Title, int ActivityTypeId, DateTime StartTime,
-        int DurationMinutes, string Status);
+        int DurationMinutes, string Status, Guid? Id = null);
 
     private static readonly object Daily = new { frequency = "daily", daysOfWeek = Array.Empty<string>(), until = (string?)null };
 
@@ -109,26 +109,87 @@ public class HistoryTests
     }
 
     [Fact]
-    public async Task Deleting_keeps_the_past_of_a_series_but_not_a_one_off_activity()
+    public async Task Deleting_an_activity_or_subject_removes_all_its_occurrences()
     {
         var client = await TestClient.CreateUserClientAsync(_factory);
-        var start = Today.AddDays(-3).AddHours(6);
-        var series = await CreateAsync(client, Activity(start, Daily));
+        var series = await CreateAsync(client, Activity(Today.AddDays(-3).AddHours(6), Daily));
         var oneOff = await CreateAsync(client, Activity(Today.AddDays(-1).AddHours(15)));
+        var kept = await CreateAsync(client, Activity(Today.AddDays(-1).AddHours(20), title: "Kept"));
 
         var subject = await (await client.PostJsonAsync("/api/subjects", TestClient.Subject())).ReadAsync<SubjectDto>();
-        await CreateAsync(client, Activity(Today.AddDays(-2).AddHours(18), title: "Anatomy", subjectId: subject.Id));
+        await CreateAsync(client, Activity(Today.AddDays(-2).AddHours(18), Daily, title: "Anatomy", subjectId: subject.Id));
+
+        // Recorded before they are deleted.
+        Assert.Contains(await OccurrencesAsync(client, Today.AddDays(-7), Today.AddDays(3)), o => o.Title == "Anatomy");
 
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/activities/{series.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/activities/{oneOff.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/subjects/{subject.Id}")).StatusCode);
 
-        var occurrences = await OccurrencesAsync(client, Today.AddDays(-7), Today.AddDays(3));
-        Assert.All(occurrences, o => Assert.True(o.StartTime < DateTime.UtcNow));
-        Assert.All(occurrences, o => Assert.Null(o.ActivityId));
-        Assert.Equal(3, occurrences.Count(o => o.Title == "Session" && o.StartTime < Today));
-        Assert.Contains(occurrences, o => o.Title == "Anatomy" && o.SubjectId is null);
-        Assert.DoesNotContain(occurrences, o => o.StartTime == Today.AddDays(-1).AddHours(15));
+        var left = await OccurrencesAsync(client, Today.AddDays(-7), Today.AddDays(3));
+        Assert.Equal(kept.Id, Assert.Single(left).ActivityId);
+    }
+
+    [Fact]
+    public async Task Detached_history_can_be_deleted_only_by_its_owner()
+    {
+        var client = await TestClient.CreateUserClientAsync(_factory);
+        var start = Today.AddDays(-3).AddHours(6);
+        var series = await CreateAsync(client, Activity(start, Daily));
+        var linked = (await OccurrencesAsync(client, Today.AddDays(-7), Today)).First();
+        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync($"/api/occurrences/{linked.Id}")).StatusCode);
+
+        // A series that becomes a one-off leaves its other past occurrences on their own.
+        (await client.PutJsonAsync($"/api/activities/{series.Id}", Activity(start))).EnsureSuccessStatusCode();
+        var detached = (await OccurrencesAsync(client, Today.AddDays(-7), Today)).First(o => o.ActivityId is null);
+
+        var stranger = await TestClient.CreateUserClientAsync(_factory);
+        Assert.Equal(HttpStatusCode.NotFound, (await stranger.DeleteAsync($"/api/occurrences/{detached.Id}")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/occurrences/{detached.Id}")).StatusCode);
+        Assert.DoesNotContain(await OccurrencesAsync(client, Today.AddDays(-7), Today), o => o.Id == detached.Id);
+    }
+
+    [Fact]
+    public async Task Demo_data_is_saved_once_by_the_server_and_only_into_an_empty_account()
+    {
+        var client = await TestClient.CreateUserClientAsync(_factory);
+
+        var response = await client.PostJsonAsync("/api/onboarding/demo-data", new { timeZone = "Europe/Warsaw" });
+        response.EnsureSuccessStatusCode();
+        Assert.True((await response.ReadAsync<UserDto>()).SetupCompleted);
+
+        var subjects = await (await client.GetAsync("/api/subjects")).ReadAsync<List<SubjectDto>>();
+        var topics = await (await client.GetAsync("/api/topics")).ReadAsync<List<TopicDto>>();
+        var activities = await (await client.GetAsync("/api/activities")).ReadAsync<List<ActivityDto>>();
+        Assert.Equal(4, subjects.Count);
+        Assert.Equal(17, topics.Count);
+        Assert.Equal(13, activities.Count);
+
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.PostJsonAsync("/api/onboarding/demo-data", new { timeZone = "Europe/Warsaw" })).StatusCode);
+        Assert.Equal(4, (await (await client.GetAsync("/api/subjects")).ReadAsync<List<SubjectDto>>()).Count);
+
+        // Every demo activity can be deleted, and then it is gone from the occurrences too.
+        var occurrences = await OccurrencesAsync(client, Today.AddDays(-7), Today.AddDays(7));
+        Assert.Contains(occurrences, o => o.Title == "Breakfast");
+        var breakfast = activities.Single(a => a.Title == "Breakfast");
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/activities/{breakfast.Id}")).StatusCode);
+        Assert.DoesNotContain(await OccurrencesAsync(client, Today.AddDays(-7), Today.AddDays(7)), o => o.Title == "Breakfast");
+    }
+
+    [Fact]
+    public async Task Demo_data_is_refused_when_the_account_has_data_and_complete_is_remembered()
+    {
+        var client = await TestClient.CreateUserClientAsync(_factory);
+        await CreateAsync(client, Activity(Today.AddDays(1).AddHours(6)));
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.PostJsonAsync("/api/onboarding/demo-data", new { timeZone = "UTC" })).StatusCode);
+
+        var fresh = await TestClient.CreateUserClientAsync(_factory);
+        Assert.False((await (await fresh.GetAsync("/api/auth/me")).ReadAsync<UserDto>()).SetupCompleted);
+        (await fresh.PostAsync("/api/onboarding/complete", null)).EnsureSuccessStatusCode();
+        Assert.True((await (await fresh.GetAsync("/api/auth/me")).ReadAsync<UserDto>()).SetupCompleted);
     }
 
     [Fact]
@@ -227,7 +288,7 @@ public class HistoryTests
         Assert.Equal(series.Id, after.Single(o => o.StartTime == start).ActivityId);
         Assert.All(after.Where(o => o.StartTime != start), o => Assert.Null(o.ActivityId));
 
-        // It is the one-off's own entry now: deleting that removes it, the rest stays.
+        // It is the one-off's own entry now: deleting that removes it, the detached rest stays.
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/activities/{series.Id}")).StatusCode);
         var left = await OccurrencesAsync(client, Today.AddDays(-7), Today);
         Assert.Equal(before.Skip(1).Select(o => o.StartTime), left.Select(o => o.StartTime));

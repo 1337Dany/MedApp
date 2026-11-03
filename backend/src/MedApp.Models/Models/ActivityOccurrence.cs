@@ -12,7 +12,7 @@ public class ActivityOccurrence
     public Guid UserId { get; set; }
     public User User { get; set; } = null!;
 
-    // Null once the activity is deleted; the occurrence stays in the history.
+    // Null once a series has become a one-off activity: its earlier occurrences stay in the history on their own.
     public Guid? ActivityId { get; set; }
     public Activity? Activity { get; set; }
 

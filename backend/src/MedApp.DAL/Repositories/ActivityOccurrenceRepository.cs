@@ -35,6 +35,16 @@ public class ActivityOccurrenceRepository : IActivityOccurrenceRepository
         return query.ToListAsync(ct);
     }
 
+    public Task<List<ActivityOccurrence>> GetOfSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default) =>
+        _db.ActivityOccurrences
+            .Where(o => o.UserId == userId &&
+                        (o.ActivityId == null ? o.SubjectId == subjectId : o.Activity!.SubjectId == subjectId))
+            .ToListAsync(ct);
+
+    public Task<ActivityOccurrence?> GetDetachedAsync(Guid occurrenceId, Guid userId, CancellationToken ct = default) =>
+        _db.ActivityOccurrences
+            .FirstOrDefaultAsync(o => o.ActivityOccurrenceId == occurrenceId && o.UserId == userId && o.ActivityId == null, ct);
+
     // A transaction-scoped Postgres advisory lock keyed by the user id. Waiting holds a pooled connection, so the wait
     // is limited: past the timeout Postgres raises 55P03, which the API answers with 503.
     public async Task LockUserHistoryAsync(Guid userId, CancellationToken ct = default)

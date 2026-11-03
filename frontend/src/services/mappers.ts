@@ -56,6 +56,7 @@ export interface ActivityDto {
 }
 
 export interface OccurrenceDto {
+  id: string | null;
   activityId: string | null;
   subjectId: string | null;
   title: string;
@@ -166,6 +167,7 @@ export const fromActivityDto = (dto: ActivityDto): Activity => ({
 export const fromOccurrenceDto = (dto: OccurrenceDto): OccurrenceRecord => {
   const start = new Date(dto.startTime);
   return {
+    id: dto.id ?? undefined,
     activityId: dto.activityId ?? undefined,
     subjectId: dto.subjectId ?? undefined,
     title: dto.title,

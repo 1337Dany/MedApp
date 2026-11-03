@@ -119,7 +119,10 @@ export function ActivityModal({ activity, occurrence, initialDate, initialHour, 
   };
 
   const handleDelete = async () => {
-    if (activity && confirm('Are you sure you want to delete this activity?')) {
+    const question = activity?.recurring
+      ? `Delete the whole series "${activity.title}"? All its occurrences, past ones included, disappear from the calendar and analytics.`
+      : 'Are you sure you want to delete this activity?';
+    if (activity && confirm(question)) {
       try {
         await deleteActivity(activity.id);
         onClose();
@@ -457,7 +460,7 @@ export function ActivityModal({ activity, occurrence, initialDate, initialHour, 
                 onClick={handleDelete}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
-                Delete
+                {activity.recurring ? 'Delete series' : 'Delete'}
               </button>
             )}
             <button

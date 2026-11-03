@@ -5,7 +5,6 @@ import { QuickActions } from './QuickActions';
 import { SubjectModal } from './SubjectModal';
 import { ActivityModal } from './ActivityModal';
 import { addDays, startOfDay } from '../utils/dates';
-import { expandOccurrences } from '../utils/recurrence';
 import { useOccurrences } from '../hooks/useOccurrences';
 
 interface DashboardProps {
@@ -52,12 +51,9 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
   };
 
   const stats = useMemo(() => {
-    // Includes today's occurrences of recurring activities; the live schedule until the history has loaded.
-    const todayStatuses =
-      todayOccurrences?.map((o) => o.status) ??
-      expandOccurrences(activities, today, addDays(today, 1)).map((o) => o.activity.status);
-
-    const completedToday = todayStatuses.filter((status) => status === 'done').length;
+    // Null until the server has answered; recurring activities are marked per occurrence.
+    const todayStatuses = todayOccurrences?.map((o) => o.status) ?? null;
+    const completedToday = todayStatuses?.filter((status) => status === 'done').length ?? 0;
 
     const upcomingExams = subjects
       .filter((s) => s.examDate && new Date(s.examDate) > new Date())
@@ -73,14 +69,14 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
     const urgentSubjects = subjects.filter((s) => s.mode === 'emergency' || s.mode === 'determined');
 
     return {
-      todayActivities: todayStatuses.length,
+      todayActivities: todayStatuses?.length ?? null,
       completedToday,
       upcomingExams,
       knowledgeStats,
       urgentSubjects,
       totalTopics: topics.length,
     };
-  }, [activities, subjects, topics, today, todayOccurrences]);
+  }, [subjects, topics, todayOccurrences]);
 
   const getKnowledgePercentage = (count: number) => {
     return stats.totalTopics > 0 ? Math.round((count / stats.totalTopics) * 100) : 0;
@@ -187,7 +183,7 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
             <div>
               <p className="text-sm text-gray-600">Today's Activities</p>
               <p className="text-2xl font-semibold text-gray-900 mt-1">
-                {stats.completedToday}/{stats.todayActivities}
+                {stats.todayActivities === null ? '-' : `${stats.completedToday}/${stats.todayActivities}`}
               </p>
             </div>
             <Calendar className="w-8 h-8 text-blue-600" />

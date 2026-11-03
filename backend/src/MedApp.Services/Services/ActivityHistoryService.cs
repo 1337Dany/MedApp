@@ -167,14 +167,36 @@ public class ActivityHistoryService : IActivityHistoryService
         return previous;
     }
 
-    public async Task ReleaseSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default)
+    public async Task ForgetActivityAsync(Activity activity, CancellationToken ct = default)
     {
-        var nowUtc = DateTime.UtcNow;
-        var future = await _occurrences.GetByUserIdAsync(userId, nowUtc, nowUtc.AddYears(100), ct);
-        foreach (var row in future.Where(o => o.SubjectId == subjectId && o.ActivityId is not null))
+        foreach (var row in await _occurrences.GetByActivityIdsAsync([activity.ActivityId], ct: ct))
         {
             await _occurrences.DeleteAsync(row, ct);
         }
+    }
+
+    public async Task ForgetSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default)
+    {
+        foreach (var row in await _occurrences.GetOfSubjectAsync(subjectId, userId, ct))
+        {
+            await _occurrences.DeleteAsync(row, ct);
+        }
+    }
+
+    public async Task<bool> DeleteDetachedOccurrenceAsync(Guid occurrenceId, Guid userId, CancellationToken ct = default)
+    {
+        await using var transaction = await BeginWriteAsync(userId, ct);
+
+        var row = await _occurrences.GetDetachedAsync(occurrenceId, userId, ct);
+        if (row is null)
+        {
+            return false;
+        }
+
+        await _occurrences.DeleteAsync(row, ct);
+        await _uow.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return true;
     }
 
     private async Task RecordPastAsync(Guid userId, DateTime nowUtc, TimeZoneInfo zone, CancellationToken ct)

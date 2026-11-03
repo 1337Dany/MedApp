@@ -31,7 +31,7 @@ const localIso = (page: Page, days: number, hour: number, minute = 0) =>
  */
 async function midWeek(page: Page) {
   const { day, hour } = await clock(page);
-  test.skip(day < 3 || hour < 3 || hour > 21, 'needs three earlier days this week and free hours around now');
+  test.skip(day < 3 || hour < 3 || hour > 20, 'needs three earlier days this week and free hours around now');
   return { day, past: hour - 2, future: hour + 2, laterDaysThisWeek: 6 - day };
 }
 
@@ -432,7 +432,7 @@ test.describe('Calendar changes reach Analytics', () => {
     await analytics(page);
     await expectReport(page, { planned: '0', sessions: 0 });
 
-    // A series: the past stays in the history (documented), the future goes.
+    // A series goes completely, its past included.
     await account.api.activity({
       title: 'Series',
       activityTypeId: STUDY,
@@ -444,12 +444,12 @@ test.describe('Calendar changes reach Analytics', () => {
     await analytics(page);
     await expectReport(page, { planned: String(4 + laterDaysThisWeek), sessions: 4 });
     await calendar(page);
-    await (await openBlock(page, day, past, 'Series')).getByRole('button', { name: 'Delete' }).click();
+    await (await openBlock(page, day, past, 'Series')).getByRole('button', { name: 'Delete series' }).click();
     await expect(modal(page, 'Edit Activity')).toHaveCount(0);
     await analytics(page);
-    await expectReport(page, { planned: '4', sessions: 4 });
+    await expectReport(page, { planned: '0', sessions: 0 });
     await calendar(page);
-    await expect.soft(blocks(page).filter({ hasText: 'Series' })).toHaveCount(4);
+    await expect(blocks(page).filter({ hasText: 'Series' })).toHaveCount(0);
   });
 
   test('g) one-off to series', async ({ page }) => {
@@ -608,9 +608,13 @@ test.describe('Calendar changes reach Analytics', () => {
     const form = await openBlock(page, day, past, 'P');
     await field(form, 'Duration (minutes) *').fill('120');
     await save(page);
-    await page.waitForTimeout(1000);
     await shot(page, 'failed-read-calendar');
-    // The save worked, the block still shows the old length, and nothing says that the view is out of date.
+    // The calendar draws only what the server returned: it says it is behind, and catches up on the next read.
+    const banner = page.getByRole('alert');
+    await expect(banner).toBeVisible();
+    await page.unroute('**/api/occurrences*');
+    await banner.getByRole('button', { name: 'Try again' }).click();
+    await expect(banner).toHaveCount(0);
     const height = await slot(page, day, past).locator('div.z-10').evaluate((b) => (b as HTMLElement).style.height);
     expect.soft(height, 'block height after the save').toBe('120px');
   });
@@ -757,10 +761,10 @@ test.describe('The calendar itself', () => {
     await expect.soft(field(form, 'Date *'), 'date field holds the start of the series').toHaveValue(first);
   });
 
-  test('previous weeks: history is drawn and blocks of a deleted activity are read-only', async ({ page }) => {
+  test('previous weeks: history is drawn, and deleting the series in the calendar removes all of it', async ({ page }) => {
     const { day, past } = await midWeek(page);
     const account = await signUp(page);
-    const series = await account.api.activity({
+    await account.api.activity({
       title: 'Series',
       activityTypeId: STUDY,
       startTime: await localIso(page, -10, past),
@@ -772,13 +776,15 @@ test.describe('The calendar itself', () => {
     await page.getByRole('button', { name: 'Previous week' }).click();
     await expect.soft(blocks(page).filter({ hasText: 'Series' })).toHaveCount(Math.min(7, 10 - day));
     await shot(page, 'previous-week');
-    await account.api.delete(`/activities/${series.id}`);
+    await slot(page, day, past).getByText('Series').click();
+    page.once('dialog', (dialog) => dialog.accept());
+    await modal(page, 'Edit Activity').getByRole('button', { name: 'Delete series' }).click();
+    await expect(blocks(page).filter({ hasText: 'Series' })).toHaveCount(0);
     await page.reload();
     await calendar(page);
+    await expect(blocks(page).filter({ hasText: 'Series' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Previous week' }).click();
-    await slot(page, day, past).getByText('Series').click();
-    await expect.soft(modal(page, 'Edit Activity')).toHaveCount(0);
-    await expect.soft(modal(page, 'New Activity'), 'a click on a history block opens nothing').toHaveCount(0);
+    await expect(blocks(page).filter({ hasText: 'Series' })).toHaveCount(0);
   });
 
   test('daylight saving: the week of the autumn change and the spring gap', async ({ page }) => {

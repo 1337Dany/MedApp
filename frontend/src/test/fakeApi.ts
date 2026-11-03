@@ -1,7 +1,7 @@
 import { http, HttpResponse, JsonBodyType } from 'msw';
 import { fromActivityDto } from '../services/mappers';
 import type { ActivityDto, OccurrenceDto, PlanningWarningDto, SubjectDto, TopicDto } from '../services/mappers';
-import { expandOccurrences } from '../utils/recurrence';
+import { expandOccurrences } from './recurrence';
 import type { ClassAnalytics } from '../services/api';
 
 // In-memory stand-in for the MedApp API (backend/src/MedApp.API/Controllers), used by the component
@@ -21,6 +21,7 @@ export interface FakeUser {
   password: string;
   dataPermission: boolean;
   role: BackendRole;
+  setupCompleted: boolean;
 }
 
 export interface RecordedRequest {
@@ -86,6 +87,7 @@ class FakeApi {
       password: 'Secret123',
       dataPermission: false,
       role: 'user',
+      setupCompleted: false,
       ...overrides,
     };
     this.users.push(user);
@@ -188,6 +190,7 @@ class FakeApi {
         const dto = own.find((a) => a.id === activity.id)!;
         const unmarked = dto.isRecurring ? (dto.status === 'skipped' ? 'skipped' : 'scheduled') : dto.status;
         return {
+          id: null,
           activityId: dto.id,
           subjectId: dto.subjectId,
           title: dto.title,
@@ -214,6 +217,7 @@ class FakeApi {
     email: u.email,
     dataPermission: u.dataPermission,
     role: u.role,
+    setupCompleted: u.setupCompleted,
   });
 
   private subjectDto = ({ userId: _, ...s }: FakeApi['subjects'][number]): SubjectDto => s;
@@ -284,6 +288,27 @@ class FakeApi {
       return new HttpResponse(null, { status: 204 });
     }),
     this.route('get', '/auth/me', ({ user }) => HttpResponse.json(this.userDto(user))),
+
+    // First visit: the real server saves a whole demo account; a small stand-in is enough here.
+    this.route('post', '/onboarding/demo-data', ({ user }) => {
+      const subjectId = nextId('subject');
+      this.subjects.push({
+        id: subjectId,
+        userId: user.id,
+        name: 'Anatomy',
+        examDate: null,
+        planningMethodId: 1,
+        priority: 5,
+        studyMode: 'relaxed',
+        colorHex: '#3b82f6',
+      });
+      user.setupCompleted = true;
+      return HttpResponse.json(this.userDto(user));
+    }),
+    this.route('post', '/onboarding/complete', ({ user }) => {
+      user.setupCompleted = true;
+      return HttpResponse.json(this.userDto(user));
+    }),
 
     // Users
     this.route('put', '/users/me', ({ user, body }) => {

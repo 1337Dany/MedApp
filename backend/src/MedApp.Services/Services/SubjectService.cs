@@ -71,10 +71,8 @@ public class SubjectService : ISubjectService
             return false;
         }
 
-        // Topics and the subject's activities are removed by the database (cascade); what already happened stays in
-        // the history without the subject.
-        await _history.RecordPastAsync(userId, ct);
-        await _history.ReleaseSubjectAsync(subjectId, userId, ct);
+        // Topics and the subject's activities are removed by the database (cascade); their occurrences go with them.
+        await _history.ForgetSubjectAsync(subjectId, userId, ct);
         await _repository.DeleteAsync(subject, ct);
         await _uow.SaveChangesAsync(ct);
         await _planning.ReplanIfActiveAsync(userId, ct);

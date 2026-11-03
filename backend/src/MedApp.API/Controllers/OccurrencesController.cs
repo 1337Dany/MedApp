@@ -37,4 +37,18 @@ public class OccurrencesController : ApiControllerBase
 
         return Ok(await _history.GetOccurrencesAsync(userId, query, ct));
     }
+
+    // Only for history without an activity; anything else is deleted through its activity.
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        return await _history.DeleteDetachedOccurrenceAsync(id, userId, ct) ? NoContent() : NotFound();
+    }
 }

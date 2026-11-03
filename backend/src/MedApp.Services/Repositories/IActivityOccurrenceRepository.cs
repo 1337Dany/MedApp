@@ -11,6 +11,12 @@ public interface IActivityOccurrenceRepository
     Task<List<ActivityOccurrence>> GetByActivityIdsAsync(IReadOnlyCollection<Guid> activityIds, DateTime? fromUtc = null,
         CancellationToken ct = default);
 
+    /// <summary>The occurrences that go with a subject: those of its activities and its detached ones.</summary>
+    Task<List<ActivityOccurrence>> GetOfSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default);
+
+    /// <summary>The user's history row without an activity; null when there is none with this id.</summary>
+    Task<ActivityOccurrence?> GetDetachedAsync(Guid occurrenceId, Guid userId, CancellationToken ct = default);
+
     /// <summary>
     /// Waits until no other transaction records the user's history or changes their activities, and holds that
     /// until the current transaction ends. Requires an open transaction; taking it again inside one is fine.

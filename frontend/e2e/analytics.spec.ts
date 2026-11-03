@@ -56,12 +56,12 @@ test.describe('Analytics', () => {
     await page.getByRole('button', { name: 'Next week' }).click();
     await expect(hoursOf(page, 'Sleep')).toHaveText('49');
 
-    // Deleting the series keeps its history.
+    // Deleting the series takes its past with it.
     await account.api.delete(`/activities/${sleep.id}`);
     await page.reload();
     await openView(page, 'Analytics', 'Analytics');
     await page.getByRole('button', { name: 'Previous week' }).click();
-    await expect(hoursOf(page, 'Sleep')).toHaveText('56');
+    await expect(hoursOf(page, 'Sleep')).toHaveText('0');
   });
 
   test('picks an exact date and reports that single day', async ({ page }) => {

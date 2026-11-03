@@ -8,10 +8,12 @@ public class HistoryProfile : Profile
 {
     public HistoryProfile()
     {
-        CreateMap<ActivityOccurrence, OccurrenceDto>();
+        CreateMap<ActivityOccurrence, OccurrenceDto>()
+            .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.ActivityOccurrenceId));
 
         // Start time and status of a live occurrence are set by ActivityHistoryService.
         CreateMap<Activity, OccurrenceDto>()
+            .ForMember(dest => dest.Id, opt => opt.Ignore())
             .ForMember(dest => dest.ActivityId, opt => opt.MapFrom(src => src.ActivityId));
     }
 }

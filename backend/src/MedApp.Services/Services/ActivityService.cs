@@ -203,9 +203,8 @@ public class ActivityService : IActivityService
             return false;
         }
 
-        // Past occurrences of a series stay in the history; a one-off activity is removed from it.
-        await _history.RecordPastAsync(userId, ct);
-        await _history.ReleaseAsync(activity, staysSeries: false, ct: ct);
+        // A deleted activity leaves the calendar and the analytics completely, its past included.
+        await _history.ForgetActivityAsync(activity, ct);
 
         if (activity.RecurringOptions is not null)
         {

@@ -26,6 +26,7 @@ interface UserDto {
   email: string;
   dataPermission: boolean;
   role: BackendRole;
+  setupCompleted: boolean;
 }
 
 const ROLE_FROM_BACKEND: Record<BackendRole, UserRole> = {
@@ -43,6 +44,7 @@ export const mapUserDto = (dto: UserDto): User => ({
   dateOfBirth: dto.dateOfBirth,
   dataPermission: dto.dataPermission,
   role: ROLE_FROM_BACKEND[dto.role] ?? 'student',
+  setupCompleted: dto.setupCompleted,
 });
 
 // Authentication API -> backend/src/MedApp.API/Controllers/AuthController.cs
@@ -166,6 +168,15 @@ export const occurrencesAPI = {
           `&timeZone=${encodeURIComponent(browserTimeZone())}`,
       )
     ).map(fromOccurrenceDto),
+  // Only history without an activity; anything else is deleted through its activity.
+  remove: (id: string) => authenticatedFetch<void>(`/occurrences/${id}`, { method: 'DELETE' }),
+};
+
+// First-visit choice -> OnboardingController. The server creates the demo records.
+export const onboardingAPI = {
+  loadDemoData: async () =>
+    mapUserDto(await authenticatedFetch<UserDto>('/onboarding/demo-data', json('POST', { timeZone: browserTimeZone() }))),
+  complete: async () => mapUserDto(await authenticatedFetch<UserDto>('/onboarding/complete', { method: 'POST' })),
 };
 
 export const planningAPI = {
