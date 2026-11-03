@@ -15,6 +15,7 @@ public class PlanningService : IPlanningService
     private readonly ISubjectRepository _subjects;
     private readonly ITopicRepository _topics;
     private readonly IActivityRepository _activities;
+    private readonly IActivityOccurrenceRepository _occurrences;
     private readonly IUnitOfWork _uow;
     private readonly IMapper _mapper;
 
@@ -23,6 +24,7 @@ public class PlanningService : IPlanningService
         ISubjectRepository subjects,
         ITopicRepository topics,
         IActivityRepository activities,
+        IActivityOccurrenceRepository occurrences,
         IUnitOfWork uow,
         IMapper mapper)
     {
@@ -30,6 +32,7 @@ public class PlanningService : IPlanningService
         _subjects = subjects;
         _topics = topics;
         _activities = activities;
+        _occurrences = occurrences;
         _uow = uow;
         _mapper = mapper;
     }
@@ -41,6 +44,11 @@ public class PlanningService : IPlanningService
         {
             return null;
         }
+
+        // Replaces planned sessions, so it takes the lock of the timetable's writes (or joins a write that holds it);
+        // two parallel plans would delete the same sessions.
+        await using var transaction = await _uow.BeginTransactionAsync(ct);
+        await _occurrences.LockUserHistoryAsync(userId, ct);
 
         var zone = TimeZones.Find(request.TimeZone);
         if (zone is not null)
@@ -77,6 +85,7 @@ public class PlanningService : IPlanningService
             await _activities.AddAsync(session, ct);
         }
         await _uow.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         return new PlanResultDto
         {
@@ -89,7 +98,17 @@ public class PlanningService : IPlanningService
         CancellationToken ct = default)
     {
         var user = await _users.GetByIdAsync(userId, ct);
-        var zone = TimeZones.Find(timeZone) ?? TimeZones.Find(user?.TimeZone) ?? TimeZoneInfo.Utc;
+        var requested = TimeZones.Find(timeZone);
+
+        // The app asks for warnings on every load, so the stored zone (used to record recurring activities into the
+        // history) follows the browser.
+        if (requested is not null && user is not null && user.TimeZone != timeZone)
+        {
+            user.TimeZone = timeZone;
+            await _uow.SaveChangesAsync(ct);
+        }
+
+        var zone = requested ?? TimeZones.Find(user?.TimeZone) ?? TimeZoneInfo.Utc;
 
         var context = await BuildContextAsync(userId, zone, days ?? PlanningRules.DefaultHorizonDays, ct);
 

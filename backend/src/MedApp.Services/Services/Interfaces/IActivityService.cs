@@ -10,6 +10,10 @@ public interface IActivityService
     Task<ActivityDto?> GetByIdAsync(Guid activityId, Guid userId, CancellationToken ct = default);
     Task<ServiceResult<ActivityDto>> CreateAsync(Guid userId, ActivityRequest request, CancellationToken ct = default);
     Task<ServiceResult<ActivityDto>> UpdateAsync(Guid activityId, Guid userId, ActivityRequest request, CancellationToken ct = default);
-    Task<ActivityDto?> UpdateStatusAsync(Guid activityId, Guid userId, Status status, CancellationToken ct = default);
-    Task<bool> DeleteAsync(Guid activityId, Guid userId, CancellationToken ct = default);
+    // With occurrenceStart, a recurring activity gets the status for that one occurrence only.
+    Task<ServiceResult<ActivityDto>> UpdateStatusAsync(Guid activityId, Guid userId, Status status,
+        DateTime? occurrenceStart = null, CancellationToken ct = default);
+    // With occurrenceStart, a recurring activity loses that one occurrence only; a one-off activity is deleted.
+    Task<ServiceResult<bool>> DeleteAsync(Guid activityId, Guid userId, DateTime? occurrenceStart = null,
+        CancellationToken ct = default);
 }

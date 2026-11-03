@@ -1,5 +1,5 @@
 import { Activity } from '../types';
-import { addDays, startOfDay } from './dates';
+import { addDays, startOfDay } from '../utils/dates';
 
 export interface Occurrence {
   activity: Activity;
@@ -38,7 +38,7 @@ export function expandOccurrences(activities: Activity[], rangeStart: Date, rang
       if (until && day > until) break;
       if (pattern.frequency === 'weekly' && !(weekdays ?? [first.getDay()]).includes(day.getDay())) continue;
 
-      const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), first.getHours(), first.getMinutes());
+      const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), first.getHours(), first.getMinutes(), first.getSeconds());
       const end = new Date(start.getTime() + durationMs);
       if (start < rangeEnd && end > rangeStart) result.push({ activity, start, end });
     }

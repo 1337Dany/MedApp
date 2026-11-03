@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace MedApp.API.Tests.Infrastructure;
 
@@ -36,7 +37,7 @@ public static class TestClient
     public static async Task<Tokens> LoginAsync(HttpClient client, string email) =>
         await (await client.PostJsonAsync("/api/auth/login", new { email, password = Password })).ReadAsync<Tokens>();
 
-    public static async Task<HttpClient> CreateUserClientAsync(ApiFactory factory, bool dataPermission = true)
+    public static async Task<HttpClient> CreateUserClientAsync(WebApplicationFactory<Program> factory, bool dataPermission = true)
     {
         var client = factory.CreateClient();
         var tokens = await RegisterAsync(client, dataPermission: dataPermission);

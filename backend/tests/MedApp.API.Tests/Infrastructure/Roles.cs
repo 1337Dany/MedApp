@@ -31,4 +31,4 @@ public static class Roles
 }
 
 public record UserDto(Guid Id, string FirstName, string LastName, DateOnly DateOfBirth, string Email, bool DataPermission,
-    string Role);
+    string Role, bool SetupCompleted = false);

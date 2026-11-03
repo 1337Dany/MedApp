@@ -13,6 +13,7 @@ public class MedAppDbContext : DbContext
     }
 
     public DbSet<Activity> Activities { get; set; }
+    public DbSet<ActivityOccurrence> ActivityOccurrences { get; set; }
     public DbSet<ActivityType> ActivityTypes { get; set; }
     public DbSet<OptionsDayOfWeek> OptionsDayOfWeek { get; set; }
     public DbSet<RecurringOptions> RecurringOptions { get; set; }

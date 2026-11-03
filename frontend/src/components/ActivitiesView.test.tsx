@@ -228,8 +228,10 @@ describe('ActivityModal', () => {
     expect(field('Duration (minutes) *', modal)).toHaveValue(45);
     expect(within(modal).getByRole('button', { name: 'Tuesday' })).toHaveAttribute('aria-pressed', 'true');
 
-    await events.selectOptions(field('Status', modal), 'done');
+    // A series is marked per occurrence; the status field appears once it is a one-off activity.
+    expect(within(modal).queryByText('Status', { selector: 'label' })).not.toBeInTheDocument();
     await events.click(within(modal).getByLabelText('Recurring'));
+    await events.selectOptions(field('Status', modal), 'done');
     await events.click(within(modal).getByRole('button', { name: 'Update' }));
 
     const [request] = fakeApi.writes();

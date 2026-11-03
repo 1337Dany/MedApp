@@ -69,8 +69,8 @@ test.describe('Activities', () => {
     form = modal(page, 'Edit Activity');
     await expect(field(form, 'Time *')).toHaveValue('16:30');
     await expect(form.getByRole('button', { name: 'Tuesday' })).toHaveAttribute('aria-pressed', 'true');
-    await field(form, 'Status').selectOption('skipped');
     await form.getByLabel('Recurring').uncheck();
+    await field(form, 'Status').selectOption('skipped');
     await form.getByRole('button', { name: 'Update' }).click();
     await expect(form).toHaveCount(0);
     await page.getByRole('button', { name: 'Skipped' }).click();

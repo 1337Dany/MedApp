@@ -57,6 +57,14 @@ public class ActivityRepository : IActivityRepository
             .Where(a => userIds.Contains(a.UserId) && a.StartTime >= fromUtc && a.StartTime < toUtc)
             .ToListAsync(ct);
 
+    public Task<List<Activity>> GetUnrecordedAsync(Guid userId, DateTime nowUtc, CancellationToken ct = default) =>
+        _db.Activities
+            .Include(a => a.RecurringOptions)
+            .ThenInclude(ro => ro!.DaysOfWeek)
+            .Where(a => a.UserId == userId && a.StartTime < nowUtc &&
+                        (a.HistoryRecordedUntil == null || (a.IsRecurring && a.HistoryRecordedUntil < nowUtc)))
+            .ToListAsync(ct);
+
     public Task AddAsync(Activity activity, CancellationToken ct = default)
     {
         _db.Activities.Add(activity);

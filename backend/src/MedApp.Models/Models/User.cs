@@ -21,6 +21,9 @@ public class User
     // IANA time zone of the student's browser, used to plan in local time. Null until first planning.
     public string? TimeZone { get; set; }
 
+    // The student has made the first-visit choice (demo data or an empty account).
+    public bool SetupCompleted { get; set; }
+
     public ICollection<Subject> Subjects { get; set; } = new List<Subject>();
     public ICollection<Activity> Activities { get; set; } = new List<Activity>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();

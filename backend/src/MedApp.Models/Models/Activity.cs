@@ -38,4 +38,9 @@ public class Activity
 
     // Created by the study planner; replaced on re-planning while still scheduled.
     public bool IsAutoPlanned { get; set; }
+
+    // Occurrences of a series that start before this time are in the history (ActivityOccurrence).
+    public DateTime? HistoryRecordedUntil { get; set; }
+
+    public ICollection<ActivityOccurrence> Occurrences { get; set; } = new List<ActivityOccurrence>();
 }

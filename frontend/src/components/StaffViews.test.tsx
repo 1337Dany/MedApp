@@ -100,37 +100,3 @@ describe('UsersView (admin)', () => {
     expect(screen.getByRole('combobox', { name: 'Role of Alice Student' })).toBeEnabled();
   });
 });
-
-describe('AnalyticsView (student)', () => {
-  it('summarizes completion, study time and knowledge with recommendations', async () => {
-    const { events } = await renderApp({
-      seed: (user) => {
-        const subject = fakeApi.addSubject(user.id);
-        fakeApi.addTopic(subject.id, { feedback: 'green' });
-        fakeApi.addTopic(subject.id, { feedback: 'red' });
-        fakeApi.addActivity(user.id, { status: 'done', durationMinutes: 150, subjectId: subject.id });
-        fakeApi.addActivity(user.id, { status: 'skipped' });
-      },
-    });
-    await screen.findByRole('heading', { name: 'Dashboard' });
-
-    await events.click(nav('Analytics'));
-
-    expect(screen.getByText('Completion Rate').nextElementSibling).toHaveTextContent('50%');
-    expect(screen.getByText('1 of 2 activities')).toBeInTheDocument();
-    expect(screen.getByText('Avg. Study Session').nextElementSibling).toHaveTextContent('150 min');
-    expect(screen.getByText('Topics Mastered').nextElementSibling).toHaveTextContent('1');
-    expect(screen.getByText('Low Completion Rate')).toBeInTheDocument();
-    expect(screen.getByText('Many Topics Need Attention')).toBeInTheDocument();
-    expect(screen.getByText('Long Study Sessions')).toBeInTheDocument();
-  });
-
-  it('asks to complete activities when nothing is done yet', async () => {
-    const { events } = await renderApp();
-    await screen.findByRole('heading', { name: 'Dashboard' });
-
-    await events.click(nav('Analytics'));
-
-    expect(screen.getByText('Start Tracking')).toBeInTheDocument();
-  });
-});

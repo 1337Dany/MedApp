@@ -21,7 +21,8 @@ public class ActivityRequestValidator : AbstractValidator<ActivityRequest>
             .InclusiveBetween(1, 5);
 
         RuleFor(x => x.StartTime)
-            .NotEqual(default(DateTime)).WithMessage("Start time is required.");
+            .NotEqual(default(DateTime)).WithMessage("Start time is required.")
+            .Must(ActivityDates.IsInRange).WithMessage(ActivityDates.RangeMessage);
 
         RuleFor(x => x.DurationMinutes)
             .InclusiveBetween(1, 24 * 60);
@@ -50,7 +51,9 @@ public class ActivityRequestValidator : AbstractValidator<ActivityRequest>
 
             RuleFor(x => x.Recurrence!.Until)
                 .Must((request, until) => until is null || until >= DateOnly.FromDateTime(request.StartTime))
-                .WithMessage("The series cannot end before it starts.");
+                .WithMessage("The series cannot end before it starts.")
+                .Must(until => until is null || ActivityDates.IsInRange(until.Value))
+                .WithMessage(ActivityDates.RangeMessage);
         });
     }
 }

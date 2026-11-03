@@ -7,16 +7,28 @@ import { parseDateOnly, toDateInputValue, toTimeInputValue } from '../utils/date
 // Activity types that can belong to a subject.
 const SUBJECT_TYPES: ActivityType[] = ['studying', 'class'];
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const OCCURRENCE_STATUSES: { value: ActivityStatus; label: string }[] = [
+  { value: 'scheduled', label: 'Not marked' },
+  { value: 'done', label: 'Done' },
+  { value: 'partial', label: 'Partially done' },
+  { value: 'skipped', label: 'Skipped' },
+];
 
 interface ActivityModalProps {
   activity: Activity | null;
+  // The occurrence clicked in the calendar; a recurring activity is marked per occurrence.
+  occurrence?: { start: Date; status: ActivityStatus };
   initialDate?: Date;
   initialHour?: number;
   onClose: () => void;
 }
 
-export function ActivityModal({ activity, initialDate, initialHour, onClose }: ActivityModalProps) {
-  const { addActivity, updateActivity, deleteActivity, subjects, topics } = useStore();
+export function ActivityModal({ activity, occurrence, initialDate, initialHour, onClose }: ActivityModalProps) {
+  const { addActivity, updateActivity, deleteActivity, deleteSeriesOccurrence, setOccurrenceStatus, subjects, topics } =
+    useStore();
+  const [occurrenceStatus, setOccurrenceStatusValue] = useState(occurrence?.status);
+  // Deleting an occurrence of a series first asks whether only it or the whole series goes.
+  const [choosingDelete, setChoosingDelete] = useState(false);
 
   const [formData, setFormData] = useState({
     title: activity?.title || '',
@@ -42,6 +54,19 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
 
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // A series has no status of its own in the form: its occurrences are marked one by one.
+  const isSeries = formData.recurring;
+  const markOccurrence = async (status: ActivityStatus) => {
+    if (!activity || !occurrence) return;
+    setError('');
+    try {
+      await setOccurrenceStatus(activity.id, occurrence.start, status);
+      setOccurrenceStatusValue(status);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not mark the occurrence.');
+    }
+  };
 
   const canHaveSubject = SUBJECT_TYPES.includes(formData.type);
   const subjectTopics = topics
@@ -75,7 +100,7 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
         : undefined,
       negotiable: formData.negotiable,
       priority: formData.priority,
-      status: formData.status,
+      status: isSeries ? (activity?.recurring ? activity.status : 'scheduled') : formData.status,
       subjectId: canHaveSubject && formData.subjectId ? formData.subjectId : undefined,
       topicId: canHaveSubject && formData.subjectId && formData.topicId ? formData.topicId : undefined,
       notes: formData.notes || undefined,
@@ -96,15 +121,25 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
     }
   };
 
-  const handleDelete = async () => {
-    if (activity && confirm('Are you sure you want to delete this activity?')) {
-      try {
-        await deleteActivity(activity.id);
-        onClose();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not delete the activity.');
-      }
+  const runDelete = async (remove: () => Promise<void>) => {
+    try {
+      await remove();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete the activity.');
     }
+  };
+
+  const handleDelete = async () => {
+    if (!activity) return;
+    if (activity.recurring && occurrence) {
+      setChoosingDelete(true);
+      return;
+    }
+    const question = activity.recurring
+      ? `Delete the whole series "${activity.title}"? All its occurrences, past ones included, disappear from the calendar and analytics.`
+      : 'Are you sure you want to delete this activity?';
+    if (confirm(question)) await runDelete(() => deleteActivity(activity.id));
   };
 
   const toggleRecurrenceDay = (day: number) => {
@@ -152,6 +187,34 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
             />
           </div>
 
+          {activity?.recurring && occurrence && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm font-medium text-blue-900">
+                This occurrence:{' '}
+                {occurrence.start.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })},{' '}
+                {occurrence.start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2" role="group" aria-label="Status of this occurrence">
+                {OCCURRENCE_STATUSES.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => markOccurrence(option.value)}
+                    aria-pressed={occurrenceStatus === option.value}
+                    className={`px-3 py-1.5 text-sm rounded-lg border ${
+                      occurrenceStatus === option.value
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-blue-700 mt-2">Saved right away. Changes below apply to the whole series.</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -174,6 +237,7 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
               </select>
             </div>
 
+            {!isSeries && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Status
@@ -189,6 +253,12 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
                 <option value="skipped">Skipped</option>
               </select>
             </div>
+            )}
+            {isSeries && !occurrence && (
+              <p className="self-end text-xs text-gray-500">
+                Open an occurrence in the Calendar to mark it done or skipped.
+              </p>
+            )}
           </div>
 
           {canHaveSubject && (
@@ -400,7 +470,7 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
                 onClick={handleDelete}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
-                Delete
+                {activity.recurring && !occurrence ? 'Delete series' : 'Delete'}
               </button>
             )}
             <button
@@ -411,6 +481,38 @@ export function ActivityModal({ activity, initialDate, initialHour, onClose }: A
               Cancel
             </button>
           </div>
+
+          {choosingDelete && activity && occurrence && (
+            <div role="group" aria-label="What to delete" className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-900">
+                Delete only this occurrence, or the whole series "{activity.title}"? The whole series also disappears
+                from past weeks and the analytics.
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => runDelete(() => deleteSeriesOccurrence(activity.id, occurrence.start))}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700"
+                >
+                  Only this occurrence
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runDelete(() => deleteActivity(activity.id))}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-white text-red-700 border border-red-300 hover:bg-red-100"
+                >
+                  The whole series
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChoosingDelete(false)}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                >
+                  Keep it
+                </button>
+              </div>
+            </div>
+          )}
         </form>
       </div>
     </div>

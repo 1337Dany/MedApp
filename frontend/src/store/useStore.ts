@@ -1,16 +1,18 @@
 import { create } from 'zustand';
 import { Activity, ActivityStatus, Subject, Topic, OverloadWarning } from '../types';
-import { activitiesAPI, planningAPI, subjectsAPI, topicsAPI } from '../services/api';
+import { activitiesAPI, occurrencesAPI, planningAPI, subjectsAPI, topicsAPI } from '../services/api';
 
 // Server data for the signed-in user. Every action writes through to the API first and updates
 // local state only with what the server returned, so a failed call leaves the UI unchanged
 // (the promise rejects with an ApiError the caller can show). Changes can make the server re-plan
-// study sessions and review topics, so successful writes refresh that derived data in the background.
+// study sessions and review topics, so successful writes refresh that derived data in the background
+// and bump historyVersion, which tells the views that read the occurrences to read them again.
 interface AppState {
   activities: Activity[];
   subjects: Subject[];
   topics: Topic[];
   warnings: OverloadWarning[];
+  historyVersion: number;
   isLoaded: boolean;
   isLoadingData: boolean;
   loadError: string | null;
@@ -27,7 +29,13 @@ interface AppState {
   addActivity: (activity: Omit<Activity, 'id'>) => Promise<Activity>;
   updateActivity: (id: string, updates: Partial<Activity>) => Promise<Activity>;
   setActivityStatus: (id: string, status: ActivityStatus) => Promise<Activity>;
+  // Marks one occurrence of a recurring activity; views re-read the occurrences on historyVersion.
+  setOccurrenceStatus: (id: string, start: Date, status: ActivityStatus) => Promise<void>;
   deleteActivity: (id: string) => Promise<void>;
+  // Deletes one occurrence of a recurring activity; the series and its other occurrences stay.
+  deleteSeriesOccurrence: (id: string, start: Date) => Promise<void>;
+  // Removes a past entry that no longer belongs to an activity.
+  deleteOccurrence: (id: string) => Promise<void>;
 
   // Subject actions
   addSubject: (subject: Omit<Subject, 'id'>) => Promise<Subject>;
@@ -45,6 +53,7 @@ const EMPTY = {
   subjects: [] as Subject[],
   topics: [] as Topic[],
   warnings: [] as OverloadWarning[],
+  historyVersion: 0,
   isLoaded: false,
   isLoadingData: false,
   loadError: null as string | null,
@@ -70,7 +79,14 @@ export const useStore = create<AppState>((set, get) => ({
         topicsAPI.getAll(),
         activitiesAPI.getAll(),
       ]);
-      set({ subjects, topics, activities, isLoaded: true, isLoadingData: false });
+      set((state) => ({
+        subjects,
+        topics,
+        activities,
+        isLoaded: true,
+        isLoadingData: false,
+        historyVersion: state.historyVersion + 1,
+      }));
       planningAPI.getWarnings().then((warnings) => set({ warnings }), console.error);
     } catch (error) {
       set({
@@ -84,27 +100,32 @@ export const useStore = create<AppState>((set, get) => ({
 
   generatePlan: async (days) => {
     const { sessions, warnings } = await planningAPI.generate(days);
+    set((state) => ({ warnings, historyVersion: state.historyVersion + 1 }));
     const activities = await activitiesAPI.getAll();
-    set({ activities, warnings });
+    set({ activities });
     return sessions.length;
   },
 
   refreshDerived: async () => {
-    try {
-      const [topics, activities, warnings] = await Promise.all([
-        topicsAPI.getAll(),
-        activitiesAPI.getAll(),
-        planningAPI.getWarnings(),
-      ]);
-      set({ topics, activities, warnings });
-    } catch (error) {
-      console.error(error);
+    // Each part is applied on its own, so one failed read does not throw away the others.
+    const [topics, activities, warnings] = await Promise.allSettled([
+      topicsAPI.getAll(),
+      activitiesAPI.getAll(),
+      planningAPI.getWarnings(),
+    ]);
+    for (const result of [topics, activities, warnings]) {
+      if (result.status === 'rejected') console.error(result.reason);
     }
+    set({
+      ...(topics.status === 'fulfilled' && { topics: topics.value }),
+      ...(activities.status === 'fulfilled' && { activities: activities.value }),
+      ...(warnings.status === 'fulfilled' && { warnings: warnings.value }),
+    });
   },
 
   addActivity: async (activity) => {
     const created = await activitiesAPI.create(activity);
-    set((state) => ({ activities: [...state.activities, created] }));
+    set((state) => ({ activities: [...state.activities, created], historyVersion: state.historyVersion + 1 }));
     void get().refreshDerived();
     return created;
   },
@@ -112,27 +133,43 @@ export const useStore = create<AppState>((set, get) => ({
   updateActivity: async (id, updates) => {
     const { id: _, ...current } = findOrThrow(get().activities, id);
     const updated = await activitiesAPI.update(id, { ...current, ...updates });
-    set((state) => ({ activities: replace(state.activities, updated) }));
+    set((state) => ({ activities: replace(state.activities, updated), historyVersion: state.historyVersion + 1 }));
     void get().refreshDerived();
     return updated;
   },
 
   setActivityStatus: async (id, status) => {
     const updated = await activitiesAPI.setStatus(id, status);
-    set((state) => ({ activities: replace(state.activities, updated) }));
+    set((state) => ({ activities: replace(state.activities, updated), historyVersion: state.historyVersion + 1 }));
     void get().refreshDerived();
     return updated;
   },
 
+  setOccurrenceStatus: async (id, start, status) => {
+    await activitiesAPI.setStatus(id, status, start);
+    set((state) => ({ historyVersion: state.historyVersion + 1 }));
+    await get().refreshDerived();
+  },
+
   deleteActivity: async (id) => {
     await activitiesAPI.remove(id);
-    set((state) => ({ activities: state.activities.filter((a) => a.id !== id) }));
+    set((state) => ({ activities: state.activities.filter((a) => a.id !== id), historyVersion: state.historyVersion + 1 }));
     void get().refreshDerived();
+  },
+
+  deleteSeriesOccurrence: async (id, start) => {
+    await activitiesAPI.remove(id, start);
+    set((state) => ({ historyVersion: state.historyVersion + 1 }));
+  },
+
+  deleteOccurrence: async (id) => {
+    await occurrencesAPI.remove(id);
+    set((state) => ({ historyVersion: state.historyVersion + 1 }));
   },
 
   addSubject: async (subject) => {
     const created = await subjectsAPI.create(subject);
-    set((state) => ({ subjects: [...state.subjects, created] }));
+    set((state) => ({ subjects: [...state.subjects, created], historyVersion: state.historyVersion + 1 }));
     void get().refreshDerived();
     return created;
   },
@@ -140,7 +177,7 @@ export const useStore = create<AppState>((set, get) => ({
   updateSubject: async (id, updates) => {
     const { id: _, ...current } = findOrThrow(get().subjects, id);
     const updated = await subjectsAPI.update(id, { ...current, ...updates });
-    set((state) => ({ subjects: replace(state.subjects, updated) }));
+    set((state) => ({ subjects: replace(state.subjects, updated), historyVersion: state.historyVersion + 1 }));
     void get().refreshDerived();
     return updated;
   },
@@ -152,13 +189,14 @@ export const useStore = create<AppState>((set, get) => ({
       subjects: state.subjects.filter((s) => s.id !== id),
       topics: state.topics.filter((t) => t.subjectId !== id),
       activities: state.activities.filter((a) => a.subjectId !== id),
+      historyVersion: state.historyVersion + 1,
     }));
     void get().refreshDerived();
   },
 
   addTopic: async (subjectId, topic) => {
     const created = await topicsAPI.create(subjectId, topic);
-    set((state) => ({ topics: [...state.topics, created] }));
+    set((state) => ({ topics: [...state.topics, created], historyVersion: state.historyVersion + 1 }));
     void get().refreshDerived();
     return created;
   },
@@ -166,7 +204,7 @@ export const useStore = create<AppState>((set, get) => ({
   updateTopic: async (id, updates) => {
     const current = findOrThrow(get().topics, id);
     const updated = await topicsAPI.update(id, { ...current, ...updates });
-    set((state) => ({ topics: replace(state.topics, updated) }));
+    set((state) => ({ topics: replace(state.topics, updated), historyVersion: state.historyVersion + 1 }));
     void get().refreshDerived();
     return updated;
   },
@@ -177,6 +215,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({
       topics: state.topics.filter((t) => t.id !== id),
       activities: state.activities.map((a) => (a.topicId === id ? { ...a, topicId: undefined } : a)),
+      historyVersion: state.historyVersion + 1,
     }));
     void get().refreshDerived();
   },

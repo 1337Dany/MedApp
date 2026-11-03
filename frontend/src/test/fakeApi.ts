@@ -1,5 +1,7 @@
 import { http, HttpResponse, JsonBodyType } from 'msw';
-import type { ActivityDto, PlanningWarningDto, SubjectDto, TopicDto } from '../services/mappers';
+import { fromActivityDto } from '../services/mappers';
+import type { ActivityDto, OccurrenceDto, PlanningWarningDto, SubjectDto, TopicDto } from '../services/mappers';
+import { expandOccurrences } from './recurrence';
 import type { ClassAnalytics } from '../services/api';
 
 // In-memory stand-in for the MedApp API (backend/src/MedApp.API/Controllers), used by the component
@@ -19,6 +21,7 @@ export interface FakeUser {
   password: string;
   dataPermission: boolean;
   role: BackendRole;
+  setupCompleted: boolean;
 }
 
 export interface RecordedRequest {
@@ -48,6 +51,10 @@ class FakeApi {
   warnings: PlanningWarningDto[] = [];
   analytics: ClassAnalytics = emptyAnalytics();
   requests: RecordedRequest[] = [];
+  // Statuses of single occurrences of recurring activities: `${activityId}|${start ISO}` -> status.
+  occurrenceMarks = new Map<string, OccurrenceDto['status']>();
+  // Single occurrences deleted from recurring activities, same keys.
+  removedOccurrences = new Set<string>();
   // Sessions the planner creates per eligible subject on POST /planning/generate.
   sessionsPerSubject = 2;
   private tokens = new Map<string, string>(); // access or refresh token -> user id
@@ -61,6 +68,8 @@ class FakeApi {
     this.warnings = [];
     this.analytics = emptyAnalytics();
     this.requests = [];
+    this.occurrenceMarks.clear();
+    this.removedOccurrences.clear();
     this.sessionsPerSubject = 2;
     this.tokens.clear();
     this.failures = [];
@@ -81,6 +90,7 @@ class FakeApi {
       password: 'Secret123',
       dataPermission: false,
       role: 'user',
+      setupCompleted: false,
       ...overrides,
     };
     this.users.push(user);
@@ -174,6 +184,27 @@ class FakeApi {
     return this.users.find((u) => u.id === id && token!.startsWith('access-'));
   }
 
+  // The real API answers from its recorded history before now; here the current timetable stands in for it.
+  private occurrences(user: FakeUser, from: Date, to: Date): OccurrenceDto[] {
+    const own = this.activities.filter((a) => a.userId === user.id);
+    return expandOccurrences(own.map((a) => fromActivityDto(this.activityDto(a))), from, to)
+      .filter((o) => o.start >= from && !this.removedOccurrences.has(`${o.activity.id}|${o.start.toISOString()}`))
+      .map(({ activity, start }) => {
+        const dto = own.find((a) => a.id === activity.id)!;
+        const unmarked = dto.isRecurring ? (dto.status === 'skipped' ? 'skipped' : 'scheduled') : dto.status;
+        return {
+          id: null,
+          activityId: dto.id,
+          subjectId: dto.subjectId,
+          title: dto.title,
+          activityTypeId: dto.activityTypeId,
+          startTime: start.toISOString(),
+          durationMinutes: dto.durationMinutes,
+          status: this.occurrenceMarks.get(`${dto.id}|${start.toISOString()}`) ?? unmarked,
+        };
+      });
+  }
+
   private takeFailure(method: string, path: string) {
     const index = this.failures.findIndex((f) => f.method === method && f.path.test(path));
     if (index < 0) return null;
@@ -189,6 +220,7 @@ class FakeApi {
     email: u.email,
     dataPermission: u.dataPermission,
     role: u.role,
+    setupCompleted: u.setupCompleted,
   });
 
   private subjectDto = ({ userId: _, ...s }: FakeApi['subjects'][number]): SubjectDto => s;
@@ -259,6 +291,27 @@ class FakeApi {
       return new HttpResponse(null, { status: 204 });
     }),
     this.route('get', '/auth/me', ({ user }) => HttpResponse.json(this.userDto(user))),
+
+    // First visit: the real server saves a whole demo account; a small stand-in is enough here.
+    this.route('post', '/onboarding/demo-data', ({ user }) => {
+      const subjectId = nextId('subject');
+      this.subjects.push({
+        id: subjectId,
+        userId: user.id,
+        name: 'Anatomy',
+        examDate: null,
+        planningMethodId: 1,
+        priority: 5,
+        studyMode: 'relaxed',
+        colorHex: '#3b82f6',
+      });
+      user.setupCompleted = true;
+      return HttpResponse.json(this.userDto(user));
+    }),
+    this.route('post', '/onboarding/complete', ({ user }) => {
+      user.setupCompleted = true;
+      return HttpResponse.json(this.userDto(user));
+    }),
 
     // Users
     this.route('put', '/users/me', ({ user, body }) => {
@@ -348,15 +401,41 @@ class FakeApi {
     this.route('patch', '/activities/:id/status', ({ user, params, body }) => {
       const activity = this.activities.find((a) => a.id === params.id && a.userId === user.id);
       if (!activity) return new HttpResponse(null, { status: 404 });
-      activity.status = body.status;
+      if (body.occurrenceStart && activity.isRecurring) {
+        const start = new Date(body.occurrenceStart);
+        const matches = this.occurrences(user, start, new Date(start.getTime() + 1000)).some(
+          (o) => o.activityId === activity.id && o.startTime === start.toISOString(),
+        );
+        if (!matches) return problem(400, 'Invalid reference');
+        this.occurrenceMarks.set(`${activity.id}|${start.toISOString()}`, body.status);
+      } else {
+        activity.status = body.status;
+      }
       return HttpResponse.json(this.activityDto(activity));
     }),
-    this.route('delete', '/activities/:id', ({ user, params }) => {
-      if (!this.activities.some((a) => a.id === params.id && a.userId === user.id)) {
-        return new HttpResponse(null, { status: 404 });
+    this.route('delete', '/activities/:id', ({ user, params, url }) => {
+      const activity = this.activities.find((a) => a.id === params.id && a.userId === user.id);
+      if (!activity) return new HttpResponse(null, { status: 404 });
+      const occurrenceStart = url.searchParams.get('occurrenceStart');
+      if (occurrenceStart && activity.isRecurring) {
+        const start = new Date(occurrenceStart);
+        const matches = this.occurrences(user, start, new Date(start.getTime() + 1000)).some(
+          (o) => o.activityId === activity.id && o.startTime === start.toISOString(),
+        );
+        if (!matches) return problem(400, 'Invalid reference');
+        this.removedOccurrences.add(`${activity.id}|${start.toISOString()}`);
+      } else {
+        this.activities = this.activities.filter((a) => a.id !== params.id);
       }
-      this.activities = this.activities.filter((a) => a.id !== params.id);
       return new HttpResponse(null, { status: 204 });
+    }),
+
+    // Occurrences
+    this.route('get', '/occurrences', ({ user, url }) => {
+      const from = new Date(url.searchParams.get('from')!);
+      const to = new Date(url.searchParams.get('to')!);
+      if (!(to > from)) return problem(400, 'Validation failed', { To: ["'To' must be after 'From'."] });
+      return HttpResponse.json(this.occurrences(user, from, to));
     }),
 
     // Planning: replaces future auto-planned sessions with new ones for subjects that use an automatic strategy

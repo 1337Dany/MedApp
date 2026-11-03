@@ -1,45 +1,22 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
-import { generateDemoData } from '../utils/demoData';
-import { activitiesAPI, subjectsAPI, topicsAPI } from '../services/api';
+import { useAuthStore } from '../store/useAuthStore';
+import { onboardingAPI } from '../services/api';
 
-interface InitialSetupProps {
-  onComplete: () => void;
-}
-
-export function InitialSetup({ onComplete }: InitialSetupProps) {
+export function InitialSetup() {
   const { loadAll } = useStore();
+  const { setUser } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Saves the demo records through the API, mapping demo keys to the ids the server assigns.
-  // Goes straight to the API (not the store) so this screen stays up until everything is saved.
+  // The server saves the demo records in one transaction; this screen stays up until they are loaded.
   const loadDemoData = async () => {
     setLoading(true);
     setError('');
-    const { subjects: demoSubjects, topics: demoTopics, activities: demoActivities } = generateDemoData();
-
     try {
-      const subjectIds: Record<string, string> = {};
-      for (const { key, ...subject } of demoSubjects) {
-        subjectIds[key] = (await subjectsAPI.create(subject)).id;
-      }
-
-      const topicIds: Record<string, string> = {};
-      for (const { key, subjectKey, ...topic } of demoTopics) {
-        topicIds[key] = (await topicsAPI.create(subjectIds[subjectKey], topic)).id;
-      }
-
-      for (const { subjectKey, topicKey, ...activity } of demoActivities) {
-        await activitiesAPI.create({
-          ...activity,
-          subjectId: subjectKey ? subjectIds[subjectKey] : undefined,
-          topicId: topicKey ? topicIds[topicKey] : undefined,
-        });
-      }
-
-      onComplete();
+      const user = await onboardingAPI.loadDemoData();
       await loadAll();
+      setUser(user);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the demo data.');
     } finally {
@@ -47,8 +24,16 @@ export function InitialSetup({ onComplete }: InitialSetupProps) {
     }
   };
 
-  const startFresh = () => {
-    onComplete();
+  const startFresh = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setUser(await onboardingAPI.complete());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save your choice.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
