@@ -54,6 +54,9 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+// Unhandled errors leave as RFC 7807 JSON like every other error of the API, never as an empty 500.
+builder.Services.AddProblemDetails();
+
 // Enums travel as camelCase strings ("partiallyDone", "teacher") instead of numbers.
 builder.Services
     .AddControllers()
@@ -138,6 +141,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+else
+{
+    // Development keeps the developer exception page.
+    app.UseExceptionHandler();
+}
 
 // A write or read that waited too long for the user's history lock (Postgres lock_timeout) can simply be repeated.
 app.Use(async (context, next) =>
@@ -164,6 +172,14 @@ app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
 app.MapControllers();
+
+// Liveness for deploys and monitoring: 200 once the API runs and reaches its database.
+app.MapGet("/api/health", async (MedAppDbContext db, CancellationToken ct) =>
+        await db.Database.CanConnectAsync(ct)
+            ? Results.Ok(new { status = "ok" })
+            : Results.Problem("The database is not reachable.", statusCode: StatusCodes.Status503ServiceUnavailable))
+    .AllowAnonymous()
+    .ExcludeFromDescription();
 
 app.Run();
 

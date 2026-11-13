@@ -58,6 +58,8 @@ class FakeApi {
   // Sessions the planner creates per eligible subject on POST /planning/generate.
   sessionsPerSubject = 2;
   private tokens = new Map<string, string>(); // access or refresh token -> user id
+  // Tokens of the password-reset "mails": token -> email.
+  resetTokens = new Map<string, string>();
   private failures: Failure[] = [];
 
   reset() {
@@ -72,6 +74,7 @@ class FakeApi {
     this.removedOccurrences.clear();
     this.sessionsPerSubject = 2;
     this.tokens.clear();
+    this.resetTokens.clear();
     this.failures = [];
   }
 
@@ -290,6 +293,35 @@ class FakeApi {
       this.tokens.delete(body.refreshToken);
       return new HttpResponse(null, { status: 204 });
     }),
+    this.route(
+      'post',
+      '/auth/forgot-password',
+      ({ body }) => {
+        // Like the real API: the same answer for every address. The "mail" is kept for the test to read.
+        if (this.users.some((u) => u.email === body.email)) this.resetTokens.set(`reset-${nextId('token')}`, body.email);
+        return new HttpResponse(null, { status: 204 });
+      },
+      true,
+    ),
+    this.route(
+      'post',
+      '/auth/reset-password',
+      ({ body }) => {
+        const user = this.users.find((u) => u.email === this.resetTokens.get(body.token));
+        if (!user) return problem(400, 'This reset link is not valid any more. Ask for a new one.');
+        this.resetTokens.delete(body.token);
+        user.password = body.newPassword;
+        return new HttpResponse(null, { status: 204 });
+      },
+      true,
+    ),
+    this.route('post', '/auth/change-password', ({ user, body }) => {
+      if (user.password !== body.currentPassword) return problem(400, 'The current password is not correct.');
+      user.password = body.newPassword;
+      // Every other session ends; this one continues with the tokens of the answer.
+      for (const [token, userId] of [...this.tokens]) if (userId === user.id) this.tokens.delete(token);
+      return HttpResponse.json(this.issueTokens(user.id));
+    }),
     this.route('get', '/auth/me', ({ user }) => HttpResponse.json(this.userDto(user))),
 
     // First visit: the real server saves a whole demo account; a small stand-in is enough here.
@@ -318,6 +350,14 @@ class FakeApi {
       if (!body.firstName) return problem(400, 'Validation failed', { FirstName: ["'First Name' must not be empty."] });
       Object.assign(user, body);
       return HttpResponse.json(this.userDto(user));
+    }),
+    this.route('delete', '/users/me', ({ user, body }) => {
+      if (user.password !== body.password) return problem(400, 'The password is not correct.');
+      this.users = this.users.filter((u) => u.id !== user.id);
+      this.subjects = this.subjects.filter((s) => s.userId !== user.id);
+      this.activities = this.activities.filter((a) => a.userId !== user.id);
+      for (const [token, userId] of [...this.tokens]) if (userId === user.id) this.tokens.delete(token);
+      return new HttpResponse(null, { status: 204 });
     }),
     this.route('get', '/users', ({ user }) =>
       user.role === 'admin' ? HttpResponse.json(this.users.map(this.userDto)) : new HttpResponse(null, { status: 403 }),

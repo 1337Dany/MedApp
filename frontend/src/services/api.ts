@@ -67,6 +67,19 @@ export const authAPI = {
       body: JSON.stringify({ refreshToken }),
     }),
 
+  // Answers 204 for every address; the mail carries the token for resetPassword.
+  forgotPassword: (email: string) =>
+    publicFetch<void>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+
+  resetPassword: (token: string, newPassword: string) =>
+    publicFetch<void>('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, newPassword }) }),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    authenticatedFetch<AuthTokens>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+
   getCurrentUser: async (): Promise<User> => mapUserDto(await authenticatedFetch<UserDto>('/auth/me')),
 };
 
@@ -87,6 +100,9 @@ export interface ProfileUpdate {
 export const usersAPI = {
   updateMe: async (profile: ProfileUpdate) =>
     mapUserDto(await authenticatedFetch<UserDto>('/users/me', { method: 'PUT', body: JSON.stringify(profile) })),
+  // Deletes the account with all its data; the password confirms it.
+  deleteMe: (password: string) =>
+    authenticatedFetch<void>('/users/me', { method: 'DELETE', body: JSON.stringify({ password }) }),
   // Admin only
   getAll: async () => (await authenticatedFetch<UserDto[]>('/users')).map(mapUserDto),
   setRole: async (id: string, role: UserRole) =>

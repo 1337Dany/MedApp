@@ -4,6 +4,7 @@ using MedApp.Services.DTOs.Users;
 using MedApp.Services.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace MedApp.API.Controllers;
 
@@ -14,12 +15,15 @@ public class UsersController : ApiControllerBase
     private readonly IUserService _users;
     private readonly IValidator<UpdateProfileRequest> _profileValidator;
     private readonly IValidator<UpdateRoleRequest> _roleValidator;
+    private readonly IValidator<DeleteAccountRequest> _deleteValidator;
 
     public UsersController(
         IUserService users,
         IValidator<UpdateProfileRequest> profileValidator,
-        IValidator<UpdateRoleRequest> roleValidator)
+        IValidator<UpdateRoleRequest> roleValidator,
+        IValidator<DeleteAccountRequest> deleteValidator)
     {
+        _deleteValidator = deleteValidator;
         _users = users;
         _profileValidator = profileValidator;
         _roleValidator = roleValidator;
@@ -43,6 +47,27 @@ public class UsersController : ApiControllerBase
 
         var user = await _users.UpdateProfileAsync(userId, request, ct);
         return user is null ? Unauthorized() : Ok(user);
+    }
+
+    // Deletes the caller's account and all its data; the password in the body confirms it. Cannot be undone.
+    [HttpDelete("me")]
+    [EnableRateLimiting(AuthController.RateLimitPolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> DeleteMe([FromBody] DeleteAccountRequest request, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        if (await ValidateAsync(_deleteValidator, request, ct) is { } invalid)
+        {
+            return invalid;
+        }
+
+        var result = await _users.DeleteAccountAsync(userId, request, ct);
+        return result.Succeeded ? NoContent() : MapFailure(result);
     }
 
     [HttpGet]

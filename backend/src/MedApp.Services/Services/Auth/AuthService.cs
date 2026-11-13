@@ -3,7 +3,10 @@ using MedApp.Models.Models;
 using MedApp.Services.DTOs.Auth;
 using MedApp.Services.DTOs.Users;
 using MedApp.Services.Repositories;
+using MedApp.Services.Services.Email;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace MedApp.Services.Services.Auth;
 
@@ -15,6 +18,13 @@ public class AuthService : IAuthService
     private readonly IPasswordHasher<User> _passwordHasher;
     private readonly IJwtTokenService _tokenService;
     private readonly IMapper _mapper;
+    private readonly IEmailSender _emailSender;
+    private readonly EmailOptions _email;
+    private readonly ILogger<AuthService> _logger;
+
+    // Verified when the email is unknown, so that answer takes as long as a wrong password (no account probing).
+    private static readonly User UnknownUser = new();
+    private static readonly string UnknownUserHash = new PasswordHasher<User>().HashPassword(UnknownUser, Guid.NewGuid().ToString());
 
     public AuthService(
         IUserRepository users,
@@ -22,8 +32,14 @@ public class AuthService : IAuthService
         IUnitOfWork uow,
         IPasswordHasher<User> passwordHasher,
         IJwtTokenService tokenService,
-        IMapper mapper)
+        IMapper mapper,
+        IEmailSender emailSender,
+        IOptions<EmailOptions> email,
+        ILogger<AuthService> logger)
     {
+        _emailSender = emailSender;
+        _email = email.Value;
+        _logger = logger;
         _users = users;
         _refreshTokens = refreshTokens;
         _uow = uow;
@@ -48,7 +64,15 @@ public class AuthService : IAuthService
         await _users.AddAsync(user, ct);
         // Commit the new user first so the server-generated Id is populated before we
         // create a refresh token that references it.
-        await _uow.SaveChangesAsync(ct);
+        try
+        {
+            await _uow.SaveChangesAsync(ct);
+        }
+        catch (UniqueConstraintException)
+        {
+            // Another registration of the same email got in between the check above and this save.
+            return AuthResult.Failure(AuthError.EmailAlreadyTaken, "Email is already in use.");
+        }
 
         var tokens = await IssueTokensAsync(user, ct);
         return AuthResult.Success(tokens);
@@ -61,6 +85,7 @@ public class AuthService : IAuthService
         var user = await _users.GetByEmailAsync(normalizedEmail, ct);
         if (user is null)
         {
+            _passwordHasher.VerifyHashedPassword(UnknownUser, UnknownUserHash, request.Password);
             return AuthResult.Failure(AuthError.InvalidCredentials, "Invalid email or password.");
         }
 
@@ -142,6 +167,79 @@ public class AuthService : IAuthService
         return true;
     }
 
+    public async Task<AuthResult> ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken ct = default)
+    {
+        var user = await _users.GetByIdAsync(userId, ct);
+        if (user is null ||
+            _passwordHasher.VerifyHashedPassword(user, user.HashedPassword, request.CurrentPassword) == PasswordVerificationResult.Failed)
+        {
+            return AuthResult.Failure(AuthError.InvalidCredentials, "The current password is not correct.");
+        }
+
+        // The new hash, the end of every other session and this session's new tokens are saved together.
+        await using var transaction = await _uow.BeginTransactionAsync(ct);
+        user.HashedPassword = _passwordHasher.HashPassword(user, request.NewPassword);
+        user.PasswordResetTokenHash = null;
+        user.PasswordResetExpiresAt = null;
+        await _refreshTokens.RevokeAllActiveForUserAsync(userId, ct);
+        var tokens = await IssueTokensAsync(user, ct);
+        await transaction.CommitAsync(ct);
+        return AuthResult.Success(tokens);
+    }
+
+    public async Task RequestPasswordResetAsync(ForgotPasswordRequest request, string requestOrigin, CancellationToken ct = default)
+    {
+        var user = await _users.GetByEmailAsync(request.Email.Trim().ToLowerInvariant(), ct);
+        if (user is null)
+        {
+            // The caller is not told: the answer is the same for every address.
+            return;
+        }
+
+        // An opaque random token like a refresh token; only its hash is stored, and a new mail replaces the old one.
+        var (token, hash, _) = _tokenService.GenerateRefreshToken();
+        user.PasswordResetTokenHash = hash;
+        user.PasswordResetExpiresAt = DateTime.UtcNow.AddMinutes(_email.PasswordResetMinutes);
+        await _uow.SaveChangesAsync(ct);
+
+        var baseUrl = (string.IsNullOrWhiteSpace(_email.PublicUrl) ? requestOrigin : _email.PublicUrl).TrimEnd('/');
+        var link = $"{baseUrl}/?resetToken={Uri.EscapeDataString(token)}";
+        try
+        {
+            await _emailSender.SendAsync(
+                user.Email,
+                "Reset your MedStudy Planner password",
+                $"Hello {user.FirstName},\n\n" +
+                $"open this link to choose a new password (valid for {_email.PasswordResetMinutes} minutes):\n{link}\n\n" +
+                "If you did not ask for it, ignore this mail: your password stays as it is.",
+                ct);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // A mail server problem must not tell the caller that the address exists.
+            _logger.LogError(e, "Could not send the password reset mail.");
+        }
+    }
+
+    public async Task<bool> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default)
+    {
+        var user = await _users.GetByPasswordResetTokenHashAsync(_tokenService.HashRefreshToken(request.Token), ct);
+        if (user is null || user.PasswordResetExpiresAt is null || user.PasswordResetExpiresAt < DateTime.UtcNow)
+        {
+            return false;
+        }
+
+        // The token works once, and whoever knew the old password is signed out everywhere.
+        await using var transaction = await _uow.BeginTransactionAsync(ct);
+        user.HashedPassword = _passwordHasher.HashPassword(user, request.NewPassword);
+        user.PasswordResetTokenHash = null;
+        user.PasswordResetExpiresAt = null;
+        await _refreshTokens.RevokeAllActiveForUserAsync(user.Id, ct);
+        await _uow.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return true;
+    }
+
     public async Task<UserDto?> GetUserAsync(Guid userId, CancellationToken ct = default)
     {
         var user = await _users.GetByIdAsync(userId, ct);
@@ -152,6 +250,9 @@ public class AuthService : IAuthService
     {
         var (accessToken, accessExpiresAt) = _tokenService.GenerateAccessToken(user);
         var (rawRefresh, hashRefresh, refreshExpiresAt) = _tokenService.GenerateRefreshToken();
+
+        // Signing in is where the user's dead tokens are cleared out, or the table only ever grows.
+        await _refreshTokens.DeleteExpiredForUserAsync(user.Id, ct);
 
         await _refreshTokens.AddAsync(new RefreshToken
         {

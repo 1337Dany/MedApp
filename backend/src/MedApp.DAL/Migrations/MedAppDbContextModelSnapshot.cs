@@ -433,6 +433,13 @@ namespace MedApp.DAL.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<DateTime?>("PasswordResetExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PasswordResetTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<int>("Role")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -449,6 +456,8 @@ namespace MedApp.DAL.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("PasswordResetTokenHash");
 
                     b.ToTable("Users", "public");
                 });

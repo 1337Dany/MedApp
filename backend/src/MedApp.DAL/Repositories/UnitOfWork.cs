@@ -1,6 +1,8 @@
 using MedApp.DAL.Context;
 using MedApp.Services.Repositories;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 
 namespace MedApp.DAL.Repositories;
 
@@ -13,8 +15,17 @@ public class UnitOfWork : IUnitOfWork
         _db = db;
     }
 
-    public Task<int> SaveChangesAsync(CancellationToken ct = default) =>
-        _db.SaveChangesAsync(ct);
+    public async Task<int> SaveChangesAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            throw new UniqueConstraintException(e);
+        }
+    }
 
     public async Task<IUnitOfWorkTransaction> BeginTransactionAsync(CancellationToken ct = default) =>
         _db.Database.CurrentTransaction is not null

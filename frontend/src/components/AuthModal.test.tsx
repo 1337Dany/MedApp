@@ -143,4 +143,61 @@ describe('AuthModal', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: 'Create Account' })).toBeEnabled());
     });
   });
+
+  describe('Forgotten password', () => {
+    it('"Forgot password?" asks for a reset link and says the same for every address', async () => {
+      fakeApi.addUser({ email: 'jane@example.com', password: 'Secret123' });
+      const { events } = renderSignedOut();
+
+      await events.click(screen.getByRole('button', { name: 'Forgot password?' }));
+      expect(screen.getByRole('heading', { name: 'Reset Password' })).toBeInTheDocument();
+      expect(screen.queryByText('Password *')).not.toBeInTheDocument();
+
+      await events.type(field('Email Address *'), 'jane@example.com');
+      await events.click(screen.getByRole('button', { name: 'Send Reset Link' }));
+
+      expect(await screen.findByText(/If this address has an account/)).toBeInTheDocument();
+      expect(fakeApi.writes(/auth\/forgot-password/)[0].body).toEqual({ email: 'jane@example.com' });
+      expect(fakeApi.resetTokens.size).toBe(1);
+
+      await events.click(screen.getByRole('button', { name: 'Back to login' }));
+      expect(screen.getByRole('heading', { name: 'Sign In' })).toBeInTheDocument();
+    });
+
+    it('the link of the mail opens the new-password form, which leads back to sign in', async () => {
+      const user = fakeApi.addUser({ email: 'jane@example.com', password: 'Secret123', setupCompleted: true });
+      fakeApi.resetTokens.set('reset-abc', user.email);
+      window.history.replaceState(null, '', '/?resetToken=reset-abc');
+      const { events } = renderSignedOut();
+
+      expect(await screen.findByRole('heading', { name: 'Choose a New Password' })).toBeInTheDocument();
+      await events.type(field('New Password *'), 'weak');
+      await events.click(screen.getByRole('button', { name: 'Set New Password' }));
+      expect(screen.getByText('Password must be at least 8 characters long.')).toBeInTheDocument();
+
+      await events.clear(field('New Password *'));
+      await events.type(field('New Password *'), 'Brand-new1');
+      await events.click(screen.getByRole('button', { name: 'Set New Password' }));
+
+      expect(await screen.findByText('Your password has been changed. Sign in with the new one.')).toBeInTheDocument();
+      expect(fakeApi.writes(/auth\/reset-password/)[0].body).toEqual({ token: 'reset-abc', newPassword: 'Brand-new1' });
+      expect(window.location.search).toBe('');
+
+      await events.type(field('Email Address *'), user.email);
+      await events.type(field('Password *'), 'Brand-new1');
+      await events.click(signInButton());
+      expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    });
+
+    it('a used or expired link shows the API message', async () => {
+      window.history.replaceState(null, '', '/?resetToken=gone');
+      const { events } = renderSignedOut();
+
+      await events.type(await waitFor(() => field('New Password *')), 'Brand-new1');
+      await events.click(screen.getByRole('button', { name: 'Set New Password' }));
+
+      expect(await screen.findByText('This reset link is not valid any more. Ask for a new one.')).toBeInTheDocument();
+      window.history.replaceState(null, '', '/');
+    });
+  });
 });

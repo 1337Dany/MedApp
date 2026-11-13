@@ -5,7 +5,6 @@ using MedApp.Services.DTOs.History;
 using MedApp.Services.History;
 using MedApp.Services.Planning;
 using MedApp.Services.Repositories;
-using MedApp.Services.Validation;
 
 namespace MedApp.Services.Services;
 
@@ -202,21 +201,12 @@ public class ActivityHistoryService : IActivityHistoryService
         return row.IsRemoved ? null : row;
     }
 
-    public async Task ForgetActivityAsync(Activity activity, CancellationToken ct = default)
-    {
-        foreach (var row in await _occurrences.GetByActivityIdsAsync([activity.ActivityId], ct: ct))
-        {
-            await _occurrences.DeleteAsync(row, ct);
-        }
-    }
+    // A series can have years of history: the rows are deleted in the database without loading them.
+    public Task ForgetActivityAsync(Activity activity, CancellationToken ct = default) =>
+        _occurrences.DeleteByActivityIdAsync(activity.ActivityId, ct);
 
-    public async Task ForgetSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default)
-    {
-        foreach (var row in await _occurrences.GetOfSubjectAsync(subjectId, userId, ct))
-        {
-            await _occurrences.DeleteAsync(row, ct);
-        }
-    }
+    public Task ForgetSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default) =>
+        _occurrences.DeleteOfSubjectAsync(subjectId, userId, ct);
 
     public async Task<bool> DeleteDetachedOccurrenceAsync(Guid occurrenceId, Guid userId, CancellationToken ct = default)
     {
@@ -246,23 +236,14 @@ public class ActivityHistoryService : IActivityHistoryService
             return;
         }
 
-        // Rows from before the accepted dates exist only in old data; nothing is recorded that far back.
-        DateTime RecordFrom(Activity a)
-        {
-            var from = a.HistoryRecordedUntil ?? a.StartTime;
-            return from < ActivityDates.MinUtc ? ActivityDates.MinUtc : from;
-        }
-
-        var from = pending.Min(RecordFrom);
+        var from = pending.Min(OccurrenceExpander.UnrecordedFromUtc);
         var existing = (await _occurrences.GetByActivityIdsAsync(pending.Select(a => a.ActivityId).ToList(), from, ct))
             .ToDictionary(o => (o.ActivityId!.Value, o.StartTime));
 
         foreach (var activity in pending)
         {
             var series = OccurrenceExpander.IsSeries(activity);
-            var starts = OccurrenceExpander.StartsUtc(activity, RecordFrom(activity), nowUtc, zone);
-
-            foreach (var start in starts)
+            foreach (var start in OccurrenceExpander.UnrecordedStartsUtc(activity, nowUtc, zone))
             {
                 if (existing.TryGetValue((activity.ActivityId, start), out var row))
                 {
