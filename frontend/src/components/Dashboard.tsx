@@ -5,7 +5,7 @@ import { QuickActions } from './QuickActions';
 import { SubjectModal } from './SubjectModal';
 import { ActivityModal } from './ActivityModal';
 import { addDays, startOfDay } from '../utils/dates';
-import { expandOccurrences } from '../utils/recurrence';
+import { useOccurrences } from '../hooks/useOccurrences';
 
 interface DashboardProps {
   onViewCalendar: () => void;
@@ -24,6 +24,9 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
   const [planDays, setPlanDays] = useState(7);
   const [isPlanning, setIsPlanning] = useState(false);
   const [planMessage, setPlanMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const today = useMemo(() => startOfDay(new Date()), []);
+  // Today's occurrences with their own marks (a recurring activity is marked per occurrence).
+  const { occurrences: todayOccurrences } = useOccurrences(today, addDays(today, 1));
 
   const plannedAhead = activities.filter(
     (a) => a.autoPlanned && a.status === 'scheduled' && new Date(a.startTime) > new Date(),
@@ -48,15 +51,13 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
   };
 
   const stats = useMemo(() => {
-    const today = startOfDay(new Date());
+    // Null until the server has answered; recurring activities are marked per occurrence.
+    const todayStatuses = todayOccurrences?.map((o) => o.status) ?? null;
+    const completedToday = todayStatuses?.filter((status) => status === 'done').length ?? 0;
 
-    // Includes today's occurrences of recurring activities.
-    const todayActivities = expandOccurrences(activities, today, addDays(today, 1));
-
-    const completedToday = todayActivities.filter((o) => o.activity.status === 'done').length;
-    
+    // Exam dates are local midnights, so today's exam is compared with the start of today, not with the clock.
     const upcomingExams = subjects
-      .filter((s) => s.examDate && new Date(s.examDate) > new Date())
+      .filter((s) => s.examDate && new Date(s.examDate) >= today)
       .sort((a, b) => new Date(a.examDate!).getTime() - new Date(b.examDate!).getTime())
       .slice(0, 3);
 
@@ -69,14 +70,14 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
     const urgentSubjects = subjects.filter((s) => s.mode === 'emergency' || s.mode === 'determined');
 
     return {
-      todayActivities: todayActivities.length,
+      todayActivities: todayStatuses?.length ?? null,
       completedToday,
       upcomingExams,
       knowledgeStats,
       urgentSubjects,
       totalTopics: topics.length,
     };
-  }, [activities, subjects, topics]);
+  }, [subjects, topics, todayOccurrences, today]);
 
   const getKnowledgePercentage = (count: number) => {
     return stats.totalTopics > 0 ? Math.round((count / stats.totalTopics) * 100) : 0;
@@ -183,7 +184,7 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
             <div>
               <p className="text-sm text-gray-600">Today's Activities</p>
               <p className="text-2xl font-semibold text-gray-900 mt-1">
-                {stats.completedToday}/{stats.todayActivities}
+                {stats.todayActivities === null ? '-' : `${stats.completedToday}/${stats.todayActivities}`}
               </p>
             </div>
             <Calendar className="w-8 h-8 text-blue-600" />
@@ -276,8 +277,9 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
         {stats.upcomingExams.length > 0 ? (
           <div className="space-y-3">
             {stats.upcomingExams.map((subject) => {
-              const daysUntil = Math.ceil(
-                (new Date(subject.examDate!).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+              // Whole calendar days; rounding absorbs the hour a daylight-saving change adds or removes.
+              const daysUntil = Math.round(
+                (new Date(subject.examDate!).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
               );
               return (
                 <div
@@ -297,7 +299,9 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-medium text-gray-900">{daysUntil} days</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {daysUntil === 0 ? 'Today' : `${daysUntil} day${daysUntil === 1 ? '' : 's'}`}
+                    </p>
                     <p className="text-xs text-gray-600 capitalize">{subject.mode} mode</p>
                   </div>
                 </div>

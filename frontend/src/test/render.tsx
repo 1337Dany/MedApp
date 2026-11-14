@@ -15,10 +15,9 @@ interface RenderOptions {
 
 /** Renders the whole app signed in as a new user of the fake API, the way a reload with a stored session does. */
 export async function renderApp({ user: overrides, firstVisit = false, seed }: RenderOptions = {}) {
-  const user = fakeApi.addUser(overrides);
+  const user = fakeApi.addUser({ setupCompleted: !firstVisit, ...overrides });
   seed?.(user);
   tokenStorage.setTokens(fakeApi.issueTokens(user.id));
-  if (!firstVisit) localStorage.setItem(`medapp.setupDone.${user.id}`, '1');
   useAuthStore.setState({ isLoading: true });
   await useAuthStore.getState().restoreSession();
 

@@ -3,10 +3,12 @@ import { Activity, ActivityStatus, Subject, Topic } from '../types';
 import { authenticatedFetch, publicFetch } from './http';
 import {
   ActivityDto,
+  OccurrenceDto,
   PlanningWarningDto,
   SubjectDto,
   TopicDto,
   fromActivityDto,
+  fromOccurrenceDto,
   fromWarningDto,
   fromSubjectDto,
   fromTopicDto,
@@ -24,6 +26,7 @@ interface UserDto {
   email: string;
   dataPermission: boolean;
   role: BackendRole;
+  setupCompleted: boolean;
 }
 
 const ROLE_FROM_BACKEND: Record<BackendRole, UserRole> = {
@@ -41,6 +44,7 @@ export const mapUserDto = (dto: UserDto): User => ({
   dateOfBirth: dto.dateOfBirth,
   dataPermission: dto.dataPermission,
   role: ROLE_FROM_BACKEND[dto.role] ?? 'student',
+  setupCompleted: dto.setupCompleted,
 });
 
 // Authentication API -> backend/src/MedApp.API/Controllers/AuthController.cs
@@ -63,6 +67,19 @@ export const authAPI = {
       body: JSON.stringify({ refreshToken }),
     }),
 
+  // Answers 204 for every address; the mail carries the token for resetPassword.
+  forgotPassword: (email: string) =>
+    publicFetch<void>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+
+  resetPassword: (token: string, newPassword: string) =>
+    publicFetch<void>('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, newPassword }) }),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    authenticatedFetch<AuthTokens>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+
   getCurrentUser: async (): Promise<User> => mapUserDto(await authenticatedFetch<UserDto>('/auth/me')),
 };
 
@@ -83,6 +100,9 @@ export interface ProfileUpdate {
 export const usersAPI = {
   updateMe: async (profile: ProfileUpdate) =>
     mapUserDto(await authenticatedFetch<UserDto>('/users/me', { method: 'PUT', body: JSON.stringify(profile) })),
+  // Deletes the account with all its data; the password confirms it.
+  deleteMe: (password: string) =>
+    authenticatedFetch<void>('/users/me', { method: 'DELETE', body: JSON.stringify({ password }) }),
   // Admin only
   getAll: async () => (await authenticatedFetch<UserDto[]>('/users')).map(mapUserDto),
   setRole: async (id: string, role: UserRole) =>
@@ -141,15 +161,44 @@ export const activitiesAPI = {
     fromActivityDto(
       await authenticatedFetch<ActivityDto>(`/activities/${id}`, json('PUT', toActivityRequest(activity))),
     ),
-  setStatus: async (id: string, status: ActivityStatus) =>
+  // With occurrenceStart, a recurring activity gets the status for that one occurrence only.
+  setStatus: async (id: string, status: ActivityStatus, occurrenceStart?: Date) =>
     fromActivityDto(
-      await authenticatedFetch<ActivityDto>(`/activities/${id}/status`, json('PATCH', { status: toBackendStatus(status) })),
+      await authenticatedFetch<ActivityDto>(
+        `/activities/${id}/status`,
+        json('PATCH', { status: toBackendStatus(status), occurrenceStart: occurrenceStart?.toISOString() ?? null }),
+      ),
     ),
-  remove: (id: string) => authenticatedFetch<void>(`/activities/${id}`, { method: 'DELETE' }),
+  // With occurrenceStart, a recurring activity loses that one occurrence only.
+  remove: (id: string, occurrenceStart?: Date) =>
+    authenticatedFetch<void>(
+      `/activities/${id}${occurrenceStart ? `?occurrenceStart=${encodeURIComponent(occurrenceStart.toISOString())}` : ''}`,
+      { method: 'DELETE' },
+    ),
 };
 
 // Study planner -> PlanningController (rules: docs/PLANNING.md)
 const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// Occurrence history -> OccurrencesController (rules: docs/ANALYTICS.md)
+export const occurrencesAPI = {
+  get: async (from: Date, to: Date) =>
+    (
+      await authenticatedFetch<OccurrenceDto[]>(
+        `/occurrences?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}` +
+          `&timeZone=${encodeURIComponent(browserTimeZone())}`,
+      )
+    ).map(fromOccurrenceDto),
+  // Only history without an activity; anything else is deleted through its activity.
+  remove: (id: string) => authenticatedFetch<void>(`/occurrences/${id}`, { method: 'DELETE' }),
+};
+
+// First-visit choice -> OnboardingController. The server creates the demo records.
+export const onboardingAPI = {
+  loadDemoData: async () =>
+    mapUserDto(await authenticatedFetch<UserDto>('/onboarding/demo-data', json('POST', { timeZone: browserTimeZone() }))),
+  complete: async () => mapUserDto(await authenticatedFetch<UserDto>('/onboarding/complete', { method: 'POST' })),
+};
 
 export const planningAPI = {
   generate: async (days: number) => {

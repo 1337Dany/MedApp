@@ -145,5 +145,7 @@ Stack: ASP.NET Core (.NET 10) + EF Core/Npgsql + PostgreSQL; React 18 + Vite + Z
 ## Soonest TODO
 All phases are done. Possible follow-ups:
 1. Delete the unused Figma UI kit (`frontend/src/components/ui`, `components/figma`) and the Vite aliases that only it needs.
-2. Per-occurrence status for recurring activities (today a status applies to the whole series).
+2. ~~Per-occurrence status for recurring activities.~~ Done on `feature/analytics-history` (2026-10-25), together with the long-term occurrence history and the week/month student reports (`docs/ANALYTICS.md`). The teacher analytics still read activities directly; they could move to the history too, but then the completion rate needs a new definition (unmarked recurring sleep and meals would drown it).
 3. Teacher groups/classes, if analytics should be per class rather than over all consenting students.
+4. Review pass of 2026-11-13 (`feature/account-recovery-review`): password change, password reset by mail (`forgot-password` / `reset-password`, SMTP settings in `.env.example`), deleting the own account, `GET /api/health`, JSON ProblemDetails for unhandled errors, 409 instead of 500 for two registrations of one email at the same moment, expired refresh tokens deleted at sign-in, history rows deleted in one statement, ended series no longer re-read on every request, the last local day of a series found west of UTC, gzip and asset caching in nginx, stale background reads dropped in the store. Migration `PasswordReset` adds two nullable columns to `Users`.
+5. NuGet reports known vulnerabilities in the transitive `System.Security.Cryptography.Xml` 9.0.18 / `Pkcs` 9.0.x (NU1902/NU1903); bump them when fixed versions are out.

@@ -9,5 +9,9 @@ public class ActivityStatusRequestValidator : AbstractValidator<ActivityStatusRe
     {
         RuleFor(x => x.Status)
             .IsInEnum();
+
+        RuleFor(x => x.OccurrenceStart)
+            .Must(start => start is null || ActivityDates.IsInRange(start.Value))
+            .WithMessage(ActivityDates.RangeMessage);
     }
 }

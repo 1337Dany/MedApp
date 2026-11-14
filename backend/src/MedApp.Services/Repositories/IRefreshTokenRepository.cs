@@ -16,4 +16,10 @@ public interface IRefreshTokenRepository
     /// Bypasses the change tracker (single UPDATE) and does not require a unit-of-work commit.
     /// </summary>
     Task<int> RevokeAllActiveForUserAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes the user's refresh tokens that have expired (single DELETE, no unit-of-work commit). Revoked tokens
+    /// stay until they expire: replay detection needs them.
+    /// </summary>
+    Task<int> DeleteExpiredForUserAsync(Guid userId, CancellationToken ct = default);
 }

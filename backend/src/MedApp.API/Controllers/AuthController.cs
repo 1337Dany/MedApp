@@ -18,14 +18,23 @@ public class AuthController : ApiControllerBase
     private readonly IValidator<LoginRequest> _loginValidator;
     private readonly IValidator<RefreshRequest> _refreshValidator;
     private readonly IValidator<LogoutRequest> _logoutValidator;
+    private readonly IValidator<ChangePasswordRequest> _changePasswordValidator;
+    private readonly IValidator<ForgotPasswordRequest> _forgotPasswordValidator;
+    private readonly IValidator<ResetPasswordRequest> _resetPasswordValidator;
 
     public AuthController(
         IAuthService authService,
         IValidator<RegisterRequest> registerValidator,
         IValidator<LoginRequest> loginValidator,
         IValidator<RefreshRequest> refreshValidator,
-        IValidator<LogoutRequest> logoutValidator)
+        IValidator<LogoutRequest> logoutValidator,
+        IValidator<ChangePasswordRequest> changePasswordValidator,
+        IValidator<ForgotPasswordRequest> forgotPasswordValidator,
+        IValidator<ResetPasswordRequest> resetPasswordValidator)
     {
+        _forgotPasswordValidator = forgotPasswordValidator;
+        _resetPasswordValidator = resetPasswordValidator;
+        _changePasswordValidator = changePasswordValidator;
         _authService = authService;
         _registerValidator = registerValidator;
         _loginValidator = loginValidator;
@@ -41,10 +50,9 @@ public class AuthController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request, CancellationToken ct)
     {
-        var validation = await _registerValidator.ValidateAsync(request, ct);
-        if (!validation.IsValid)
+        if (await ValidateAsync(_registerValidator, request, ct) is { } invalid)
         {
-            return ValidationProblem(BuildModelState(validation));
+            return invalid;
         }
 
         var result = await _authService.RegisterAsync(request, ct);
@@ -59,10 +67,9 @@ public class AuthController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken ct)
     {
-        var validation = await _loginValidator.ValidateAsync(request, ct);
-        if (!validation.IsValid)
+        if (await ValidateAsync(_loginValidator, request, ct) is { } invalid)
         {
-            return ValidationProblem(BuildModelState(validation));
+            return invalid;
         }
 
         var result = await _authService.LoginAsync(request, ct);
@@ -76,10 +83,9 @@ public class AuthController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest request, CancellationToken ct)
     {
-        var validation = await _refreshValidator.ValidateAsync(request, ct);
-        if (!validation.IsValid)
+        if (await ValidateAsync(_refreshValidator, request, ct) is { } invalid)
         {
-            return ValidationProblem(BuildModelState(validation));
+            return invalid;
         }
 
         var result = await _authService.RefreshAsync(request, ct);
@@ -93,10 +99,9 @@ public class AuthController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Logout([FromBody] LogoutRequest request, CancellationToken ct)
     {
-        var validation = await _logoutValidator.ValidateAsync(request, ct);
-        if (!validation.IsValid)
+        if (await ValidateAsync(_logoutValidator, request, ct) is { } invalid)
         {
-            return ValidationProblem(BuildModelState(validation));
+            return invalid;
         }
 
         if (!TryGetUserId(out var userId))
@@ -107,6 +112,78 @@ public class AuthController : ApiControllerBase
         // 204 whether or not anything was revoked: don't reveal if a token exists or whose it is.
         await _authService.LogoutAsync(request, userId, ct);
         return NoContent();
+    }
+
+    // Signs every other session out; the answer carries new tokens for this one. Rate-limited like login, because
+    // it checks a password.
+    [HttpPost("change-password")]
+    [Authorize]
+    [EnableRateLimiting(RateLimitPolicy)]
+    [ProducesResponseType(typeof(TokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        if (await ValidateAsync(_changePasswordValidator, request, ct) is { } invalid)
+        {
+            return invalid;
+        }
+
+        var result = await _authService.ChangePasswordAsync(userId, request, ct);
+        // A wrong current password is a mistake in the form, not an expired session: 400, so the client does not
+        // try to refresh its tokens and sign the user out.
+        return result.Succeeded
+            ? Ok(result.Tokens)
+            : BadRequest(new ProblemDetails
+            {
+                Title = "Password not changed",
+                Detail = result.ErrorMessage,
+                Status = StatusCodes.Status400BadRequest
+            });
+    }
+
+    // Always 204: whether the address has an account is not revealed. The mail carries a single-use link.
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimitPolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken ct)
+    {
+        if (await ValidateAsync(_forgotPasswordValidator, request, ct) is { } invalid)
+        {
+            return invalid;
+        }
+
+        await _authService.RequestPasswordResetAsync(request, $"{Request.Scheme}://{Request.Host}", ct);
+        return NoContent();
+    }
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimitPolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken ct)
+    {
+        if (await ValidateAsync(_resetPasswordValidator, request, ct) is { } invalid)
+        {
+            return invalid;
+        }
+
+        return await _authService.ResetPasswordAsync(request, ct)
+            ? NoContent()
+            : BadRequest(new ProblemDetails
+            {
+                Title = "Password not changed",
+                Detail = "This reset link is not valid any more. Ask for a new one.",
+                Status = StatusCodes.Status400BadRequest
+            });
     }
 
     [HttpGet("me")]

@@ -3,6 +3,7 @@ import {
   ActivityStatus,
   OverloadWarning,
   ActivityType,
+  OccurrenceRecord,
   StudyStrategy,
   Subject,
   SubjectMode,
@@ -52,6 +53,17 @@ export interface ActivityDto {
   notes: string | null;
   status: BackendStatus;
   isAutoPlanned: boolean;
+}
+
+export interface OccurrenceDto {
+  id: string | null;
+  activityId: string | null;
+  subjectId: string | null;
+  title: string;
+  activityTypeId: number;
+  startTime: string;
+  durationMinutes: number;
+  status: BackendStatus;
 }
 
 export interface PlanningWarningDto {
@@ -151,6 +163,21 @@ export const fromActivityDto = (dto: ActivityDto): Activity => ({
   notes: dto.notes ?? undefined,
   autoPlanned: dto.isAutoPlanned,
 });
+
+export const fromOccurrenceDto = (dto: OccurrenceDto): OccurrenceRecord => {
+  const start = new Date(dto.startTime);
+  return {
+    id: dto.id ?? undefined,
+    activityId: dto.activityId ?? undefined,
+    subjectId: dto.subjectId ?? undefined,
+    title: dto.title,
+    type: ACTIVITY_TYPE_BY_ID[dto.activityTypeId] ?? 'one-time',
+    start,
+    end: new Date(start.getTime() + dto.durationMinutes * 60_000),
+    duration: dto.durationMinutes,
+    status: STATUS_FROM_BACKEND[dto.status] ?? 'scheduled',
+  };
+};
 
 export const fromWarningDto = (dto: PlanningWarningDto): OverloadWarning => ({
   date: parseDateOnly(dto.date),

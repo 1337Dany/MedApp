@@ -87,34 +87,30 @@ describe('App shell', () => {
 });
 
 describe('First visit (InitialSetup)', () => {
-  it('"Start Fresh" opens an empty dashboard and is remembered', async () => {
+  it('"Start Fresh" opens an empty dashboard and the server remembers it', async () => {
     const { events, user, unmount } = await renderApp({ firstVisit: true });
 
     await events.click(await screen.findByRole('button', { name: 'Start Fresh' }));
 
-    expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(localStorage.getItem(`medapp.setupDone.${user.id}`)).toBe('1');
-    expect(fakeApi.writes()).toHaveLength(0);
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(user.setupCompleted).toBe(true);
+    expect(fakeApi.writes(/^\/onboarding\/complete$/)).toHaveLength(1);
     unmount();
   });
 
-  it('"Start with Demo Data" saves the demo subjects, topics and activities through the API', async () => {
+  it('"Start with Demo Data" lets the server create the data and shows it', async () => {
     const { events } = await renderApp({ firstVisit: true });
 
     await events.click(await screen.findByRole('button', { name: 'Start with Demo Data' }));
 
-    expect(await screen.findByRole('heading', { name: 'Dashboard' }, { timeout: 10_000 })).toBeInTheDocument();
-    expect(fakeApi.writes(/^\/subjects$/)).toHaveLength(4);
-    expect(fakeApi.writes(/^\/subjects\/.+\/topics$/)).toHaveLength(17);
-    expect(fakeApi.writes(/^\/activities$/)).toHaveLength(13);
-    // Activities reference the ids the server assigned.
-    const lecture = fakeApi.activities.find((a) => a.title === 'Anatomy Lecture')!;
-    expect(fakeApi.subjects.find((s) => s.id === lecture.subjectId)?.name).toBe('Anatomy');
-    expect(screen.getByText('Total Subjects').nextElementSibling).toHaveTextContent('4');
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(fakeApi.writes(/^\/onboarding\/demo-data$/)).toHaveLength(1);
+    expect(fakeApi.writes(/^\/subjects$/)).toHaveLength(0);
+    expect(screen.getByText('Total Subjects').nextElementSibling).toHaveTextContent('1');
   });
 
   it('shows the error and keeps both buttons when the demo data cannot be saved', async () => {
-    fakeApi.failNext('POST', /\/api\/subjects$/, 500, { title: 'Could not save.' });
+    fakeApi.failNext('POST', /\/api\/onboarding\/demo-data$/, 500, { title: 'Could not save.' });
     const { events } = await renderApp({ firstVisit: true });
 
     await events.click(await screen.findByRole('button', { name: 'Start with Demo Data' }));

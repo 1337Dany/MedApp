@@ -11,13 +11,16 @@ public class SubjectService : ISubjectService
     private readonly IUnitOfWork _uow;
     private readonly IMapper _mapper;
     private readonly IPlanningService _planning;
+    private readonly IActivityHistoryService _history;
 
-    public SubjectService(ISubjectRepository repository, IUnitOfWork uow, IMapper mapper, IPlanningService planning)
+    public SubjectService(ISubjectRepository repository, IUnitOfWork uow, IMapper mapper, IPlanningService planning,
+        IActivityHistoryService history)
     {
         _repository = repository;
         _uow = uow;
         _mapper = mapper;
         _planning = planning;
+        _history = history;
     }
 
     public async Task<IEnumerable<SubjectDto>> GetAllAsync(Guid userId, CancellationToken ct = default)
@@ -60,16 +63,20 @@ public class SubjectService : ISubjectService
 
     public async Task<bool> DeleteAsync(Guid subjectId, Guid userId, CancellationToken ct = default)
     {
+        await using var transaction = await _history.BeginWriteAsync(userId, ct);
+
         var subject = await _repository.GetByIdAsync(subjectId, userId, ct);
         if (subject is null)
         {
             return false;
         }
 
-        // Topics and the subject's activities are removed by the database (cascade).
+        // Topics and the subject's activities are removed by the database (cascade); their occurrences go with them.
+        await _history.ForgetSubjectAsync(subjectId, userId, ct);
         await _repository.DeleteAsync(subject, ct);
         await _uow.SaveChangesAsync(ct);
         await _planning.ReplanIfActiveAsync(userId, ct);
+        await transaction.CommitAsync(ct);
         return true;
     }
 }

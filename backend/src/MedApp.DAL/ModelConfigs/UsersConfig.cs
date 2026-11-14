@@ -53,6 +53,14 @@ public class UsersConfig : IEntityTypeConfiguration<User>
             .IsRequired(false);
 
         builder
+            .Property(u => u.PasswordResetTokenHash)
+            .HasMaxLength(64)
+            .IsRequired(false);
+
+        builder
+            .HasIndex(u => u.PasswordResetTokenHash);
+
+        builder
             .Property(u => u.Role)
             .HasDefaultValue(Models.Models.Enums.UserRole.User)
             .IsRequired();

@@ -14,6 +14,13 @@ services:
       Jwt__AccessTokenMinutes: ${JWT_ACCESS_TOKEN_MINUTES}
       Jwt__RefreshTokenDays: ${JWT_REFRESH_TOKEN_DAYS}
       Jwt__ClockSkewSeconds: ${JWT_CLOCK_SKEW_SECONDS}
+      # Password-reset mail; without SMTP_HOST nothing is sent.
+      Email__PublicUrl: ${APP_PUBLIC_URL:-}
+      Email__From: ${SMTP_FROM:-}
+      Email__Smtp__Host: ${SMTP_HOST:-}
+      Email__Smtp__Port: ${SMTP_PORT:-587}
+      Email__Smtp__User: ${SMTP_USER:-}
+      Email__Smtp__Password: ${SMTP_PASSWORD:-}
     depends_on:
       postgresql:
         condition: service_healthy

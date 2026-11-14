@@ -14,10 +14,6 @@ import { useStore } from './store/useStore';
 import { useAuthStore } from './store/useAuthStore';
 import { isStaff } from './types/auth';
 
-const setupKey = (userId: string) => `medapp.setupDone.${userId}`;
-const isSetupDone = (userId: string) => localStorage.getItem(setupKey(userId)) === '1';
-const markSetupDone = (userId: string) => localStorage.setItem(setupKey(userId), '1');
-
 type View = 'dashboard' | 'calendar' | 'subjects' | 'activities' | 'analytics' | 'teacher' | 'users';
 
 export default function App() {
@@ -25,14 +21,12 @@ export default function App() {
   const { isAuthenticated, isLoading, user } = useAuthStore();
   const staff = isStaff(user);
   const [currentView, setCurrentView] = useState<View>(staff ? 'teacher' : 'dashboard');
-  const [setupComplete, setSetupComplete] = useState(false);
 
   // Whenever a different user signs in (or out): drop the previous user's data, land on the
   // right start page and load the new user's data from the API.
   useEffect(() => {
     reset();
     setCurrentView(staff ? 'teacher' : 'dashboard');
-    setSetupComplete(user ? isSetupDone(user.id) : false);
     if (user && !staff) loadAll();
   }, [user?.id, staff]);
 
@@ -65,16 +59,9 @@ export default function App() {
     );
   }
 
-  // First visit of a student with an empty account: offer demo data (shown until dismissed once).
-  if (!staff && user && subjects.length === 0 && activities.length === 0 && !setupComplete) {
-    return (
-      <InitialSetup
-        onComplete={() => {
-          markSetupDone(user.id);
-          setSetupComplete(true);
-        }}
-      />
-    );
+  // First visit of a student with an empty account: offer demo data (the server remembers the choice).
+  if (!staff && user && subjects.length === 0 && activities.length === 0 && !user.setupCompleted) {
+    return <InitialSetup />;
   }
 
   // Navigation items based on role. Staff have no study data of their own.

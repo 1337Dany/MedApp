@@ -1,0 +1,51 @@
+using MedApp.Models.Models;
+using MedApp.Models.Models.Enums;
+using MedApp.Services.DTOs.History;
+using MedApp.Services.Repositories;
+
+namespace MedApp.Services.Services;
+
+// The long-term history of what happened in the timetable (rules: docs/ANALYTICS.md).
+public interface IActivityHistoryService
+{
+    // Occurrences that start in [fromUtc, toUtc): recorded ones before now, the current timetable after it.
+    Task<IReadOnlyList<OccurrenceDto>> GetOccurrencesAsync(Guid userId, OccurrencesQuery query, CancellationToken ct = default);
+
+    // Opens a transaction that holds the user's history lock. A write to the timetable runs entirely inside it, or a
+    // parallel read could record an activity the write is changing or deleting. Disposing it uncommitted rolls back.
+    Task<IUnitOfWorkTransaction> BeginWriteAsync(Guid userId, CancellationToken ct = default);
+
+    // Copies every occurrence that has started into the history (saves). Called before any change to the
+    // timetable, so a change only affects the time after it.
+    Task RecordPastAsync(Guid userId, CancellationToken ct = default);
+
+    // Before the activity is changed or deleted (does not save): a one-off activity leaves the history (it is
+    // recorded again with its new values), a series drops the marks of its future occurrences and, when it turns
+    // into a one-off, keeps its past occurrences as detached history. When it turns from one into the other, the
+    // past entry in the same minute as newStartUtc stays linked as the occurrence at the new start: a one-off's status
+    // becomes the mark of that occurrence. Returns the mark a series had on the occurrence at newStartUtc, if any.
+    Task<Status?> ReleaseAsync(Activity activity, bool staysSeries, DateTime? newStartUtc = null, CancellationToken ct = default);
+
+    // After a series got a new pattern (does not save): records its occurrence today that has already passed, unless
+    // the series has a row for today, because neither the recording (from its last run) nor the live part (from now)
+    // would cover it.
+    Task RecordTodayOfMovedSeriesAsync(Activity series, CancellationToken ct = default);
+
+    // Sets the status of one occurrence of a series (does not save) and returns the previous one; null when the
+    // series has no occurrence there (a deleted one included).
+    Task<Status?> SetOccurrenceStatusAsync(Activity series, DateTime startUtc, Status status, CancellationToken ct = default);
+
+    // Deletes one occurrence of a series, past or coming (does not save); the series and its other occurrences stay.
+    // False when the series has no occurrence there. Changing when the series occurs brings back deleted coming ones.
+    Task<bool> RemoveOccurrenceAsync(Activity series, DateTime startUtc, CancellationToken ct = default);
+
+    // Before an activity is deleted: removes all its occurrences, past ones included, right away (inside the
+    // write's transaction, not on save).
+    Task ForgetActivityAsync(Activity activity, CancellationToken ct = default);
+
+    // Before a subject is deleted: removes the occurrences of its activities and its detached ones, right away.
+    Task ForgetSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default);
+
+    // Removes one history entry that has no activity any more; false when the user has no such entry.
+    Task<bool> DeleteDetachedOccurrenceAsync(Guid occurrenceId, Guid userId, CancellationToken ct = default);
+}

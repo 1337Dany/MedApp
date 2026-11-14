@@ -8,6 +8,9 @@ public interface IUserService
     // The caller's own profile and data-sharing consent. Null if the user does not exist.
     Task<UserDto?> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default);
 
+    // Deletes the caller's account with all its data after checking the password. Cannot be undone.
+    Task<ServiceResult<bool>> DeleteAccountAsync(Guid userId, DeleteAccountRequest request, CancellationToken ct = default);
+
     // Admin only (enforced by the controller).
     Task<IEnumerable<UserDto>> GetAllAsync(CancellationToken ct = default);
 

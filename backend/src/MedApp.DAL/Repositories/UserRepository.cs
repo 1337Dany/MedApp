@@ -15,8 +15,9 @@ public class UserRepository : IUserRepository
         _db = db;
     }
 
-    public Task<User?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
-        _db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+    // FindAsync answers from the change tracker when the request has loaded the user already.
+    public async Task<User?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        await _db.Users.FindAsync([id], ct);
 
     public Task<User?> GetByEmailAsync(string normalizedEmail, CancellationToken ct = default) =>
         _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail, ct);
@@ -37,5 +38,30 @@ public class UserRepository : IUserRepository
     {
         _db.Users.Add(user);
         return Task.CompletedTask;
+    }
+
+    public Task<User?> GetByPasswordResetTokenHashAsync(string tokenHash, CancellationToken ct = default) =>
+        _db.Users.FirstOrDefaultAsync(u => u.PasswordResetTokenHash == tokenHash, ct);
+
+    public Task<int> CountAdminsAsync(CancellationToken ct = default) =>
+        _db.Users.CountAsync(u => u.Role == UserRole.Admin, ct);
+
+    public async Task DeleteWithDataAsync(Guid userId, CancellationToken ct = default)
+    {
+        await using var transaction = _db.Database.CurrentTransaction is null
+            ? await _db.Database.BeginTransactionAsync(ct)
+            : null;
+
+        // Recurrence rows hang on their activities only by a nullable key, so the cascade from the user would
+        // leave them behind; everything else goes with the user row (ON DELETE CASCADE).
+        await _db.RecurringOptions
+            .Where(ro => ro.Activities.Any(a => a.UserId == userId))
+            .ExecuteDeleteAsync(ct);
+        await _db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync(ct);
+
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
     }
 }

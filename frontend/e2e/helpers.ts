@@ -110,6 +110,11 @@ export class SeedApi {
     return response.json();
   }
 
+  async delete(path: string) {
+    const response = await this.request.delete(`/api${path}`, { headers: this.headers() });
+    expect(response.ok(), await response.text()).toBeTruthy();
+  }
+
   subject(overrides: Record<string, unknown> = {}) {
     return this.post('/subjects', {
       name: 'Anatomy',

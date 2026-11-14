@@ -1,4 +1,5 @@
 using FluentValidation;
+using MedApp.API.Email;
 using MedApp.DAL.Context;
 using MedApp.DAL.Repositories;
 using MedApp.Models.Models;
@@ -7,6 +8,7 @@ using MedApp.Services.Mapping;
 using MedApp.Services.Repositories;
 using MedApp.Services.Services;
 using MedApp.Services.Services.Auth;
+using MedApp.Services.Services.Email;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -22,6 +24,7 @@ public static class DependencyInjection
             .AddRepositories()
             .AddDomainServices()
             .AddJwtConfiguration(configuration)
+            .AddEmail(configuration)
             .AddAuthServices();
 
         return services;
@@ -52,6 +55,7 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IActivityRepository, ActivityRepository>();
+        services.AddScoped<IActivityOccurrenceRepository, ActivityOccurrenceRepository>();
         services.AddScoped<IActivityTypeRepository, ActivityTypeRepository>();
         services.AddScoped<IStudyStrategyRepository, StudyStrategyRepository>();
         services.AddScoped<IRecurringOptionsRepository, RecurringOptionsRepository>();
@@ -66,12 +70,14 @@ public static class DependencyInjection
     {
         services.AddScoped<ISubjectService, SubjectService>();
         services.AddScoped<ITopicService, TopicService>();
+        services.AddScoped<IActivityHistoryService, ActivityHistoryService>();
         services.AddScoped<IActivityService, ActivityService>();
         services.AddScoped<IActivityTypeService, ActivityTypeService>();
         services.AddScoped<IStudyStrategyService, StudyStrategyService>();
         services.AddScoped<IPlanningService, PlanningService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<ITeacherAnalyticsService, TeacherAnalyticsService>();
+        services.AddScoped<IOnboardingService, OnboardingService>();
 
         return services;
     }
@@ -90,10 +96,34 @@ public static class DependencyInjection
         return services;
     }
 
+    private static IServiceCollection AddEmail(this IServiceCollection services, IConfiguration configuration)
+    {
+        var section = configuration.GetSection(EmailOptions.SectionName);
+        services
+            .AddOptions<EmailOptions>()
+            .Bind(section)
+            .Validate(o => !o.SendsMail || !string.IsNullOrWhiteSpace(o.From),
+                "Email:From must be configured when Email:Smtp:Host is set.")
+            .Validate(o => !o.SendsMail || Uri.TryCreate(o.PublicUrl, UriKind.Absolute, out _),
+                "Email:PublicUrl (the address of the web app) must be configured when Email:Smtp:Host is set.")
+            .ValidateOnStart();
+
+        if (section.Get<EmailOptions>()?.SendsMail == true)
+        {
+            services.AddSingleton<IEmailSender, SmtpEmailSender>();
+        }
+        else
+        {
+            services.AddSingleton<IEmailSender, LoggingEmailSender>();
+        }
+
+        return services;
+    }
+
     private static IServiceCollection AddAuthServices(this IServiceCollection services)
     {
         services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
-        services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();
 
         // AutoMapper & FluentValidation configuration
