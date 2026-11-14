@@ -1,14 +1,22 @@
 import { useState } from 'react';
 import { Plus, Calendar, Clock, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { Activity } from '../types';
+import { Activity, ActivityStatus } from '../types';
 import { ActivityModal } from './ActivityModal';
+
+const FILTERS: { value: 'all' | ActivityStatus; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'done', label: 'Completed' },
+  { value: 'partial', label: 'Partial' },
+  { value: 'skipped', label: 'Skipped' },
+];
 
 export function ActivitiesView() {
   const { activities } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
-  const [filter, setFilter] = useState<'all' | 'scheduled' | 'done' | 'skipped'>('all');
+  const [filter, setFilter] = useState<'all' | ActivityStatus>('all');
 
   const filteredActivities = activities
     .filter((activity) => {
@@ -67,15 +75,11 @@ export function ActivitiesView() {
 
       {/* Filters */}
       <div className="flex gap-2">
-        {[
-          { value: 'all', label: 'All' },
-          { value: 'scheduled', label: 'Scheduled' },
-          { value: 'done', label: 'Completed' },
-          { value: 'skipped', label: 'Skipped' },
-        ].map((option) => (
+        {FILTERS.map((option) => (
           <button
             key={option.value}
-            onClick={() => setFilter(option.value as any)}
+            onClick={() => setFilter(option.value)}
+            aria-pressed={filter === option.value}
             className={`px-4 py-2 text-sm rounded-lg transition-colors ${
               filter === option.value
                 ? 'bg-blue-600 text-white'
@@ -93,7 +97,7 @@ export function ActivitiesView() {
           <p className="text-gray-500">
             {filter === 'all'
               ? 'No activities yet. Create your first activity to get started.'
-              : `No ${filter} activities.`}
+              : `No ${FILTERS.find((f) => f.value === filter)!.label.toLowerCase()} activities.`}
           </p>
         </div>
       ) : (

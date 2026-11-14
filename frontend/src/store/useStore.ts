@@ -68,10 +68,17 @@ const findOrThrow = <T extends { id: string }>(items: T[], id: string): T => {
 const replace = <T extends { id: string }>(items: T[], updated: T) =>
   items.map((i) => (i.id === updated.id ? updated : i));
 
+// Answers can arrive out of order. `session` changes when the signed-in user does (reset), so a read started for the
+// previous user is dropped; `derivedRead` numbers the background re-reads, so an older one never overwrites what a
+// newer one (started after a later write) has already put into the store.
+let session = 0;
+let derivedRead = 0;
+
 export const useStore = create<AppState>((set, get) => ({
   ...EMPTY,
 
   loadAll: async () => {
+    const mine = session;
     set({ isLoadingData: true, loadError: null });
     try {
       const [subjects, topics, activities] = await Promise.all([
@@ -79,6 +86,7 @@ export const useStore = create<AppState>((set, get) => ({
         topicsAPI.getAll(),
         activitiesAPI.getAll(),
       ]);
+      if (mine !== session) return;
       set((state) => ({
         subjects,
         topics,
@@ -87,8 +95,11 @@ export const useStore = create<AppState>((set, get) => ({
         isLoadingData: false,
         historyVersion: state.historyVersion + 1,
       }));
-      planningAPI.getWarnings().then((warnings) => set({ warnings }), console.error);
+      planningAPI.getWarnings().then((warnings) => {
+        if (mine === session) set({ warnings });
+      }, console.error);
     } catch (error) {
+      if (mine !== session) return;
       set({
         isLoadingData: false,
         loadError: error instanceof Error ? error.message : 'Could not load your data.',
@@ -96,17 +107,24 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  reset: () => set({ ...EMPTY }),
+  reset: () => {
+    session++;
+    set({ ...EMPTY });
+  },
 
   generatePlan: async (days) => {
     const { sessions, warnings } = await planningAPI.generate(days);
     set((state) => ({ warnings, historyVersion: state.historyVersion + 1 }));
+    const mine = ++derivedRead;
+    const startedIn = session;
     const activities = await activitiesAPI.getAll();
-    set({ activities });
+    if (mine === derivedRead && startedIn === session) set({ activities });
     return sessions.length;
   },
 
   refreshDerived: async () => {
+    const mine = ++derivedRead;
+    const startedIn = session;
     // Each part is applied on its own, so one failed read does not throw away the others.
     const [topics, activities, warnings] = await Promise.allSettled([
       topicsAPI.getAll(),
@@ -116,6 +134,7 @@ export const useStore = create<AppState>((set, get) => ({
     for (const result of [topics, activities, warnings]) {
       if (result.status === 'rejected') console.error(result.reason);
     }
+    if (mine !== derivedRead || startedIn !== session) return;
     set({
       ...(topics.status === 'fulfilled' && { topics: topics.value }),
       ...(activities.status === 'fulfilled' && { activities: activities.value }),

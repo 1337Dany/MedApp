@@ -17,15 +17,16 @@ public interface IActivityRepository
     /// <summary>Auto-planned sessions that are still scheduled and start at or after <paramref name="fromUtc"/>.</summary>
     Task<List<Activity>> GetReplaceableAutoPlannedAsync(Guid userId, DateTime fromUtc, CancellationToken ct = default);
 
-    // Read-only, for aggregated analytics: activities of the users starting in [fromUtc, toUtc).
-    Task<List<Activity>> GetByUserIdsAsync(IReadOnlyCollection<Guid> userIds, DateTime fromUtc, DateTime toUtc,
-        CancellationToken ct = default);
 
     /// <summary>
     /// Activities with occurrences before <paramref name="nowUtc"/> that are not in the history yet: one-off
     /// activities that started and were not recorded, and series recorded only up to an earlier time.
     /// </summary>
     Task<List<Activity>> GetUnrecordedAsync(Guid userId, DateTime nowUtc, CancellationToken ct = default);
+
+    // Read-only, for aggregated analytics: activities of the users starting in [fromUtc, toUtc).
+    Task<List<Activity>> GetByUserIdsAsync(IReadOnlyCollection<Guid> userIds, DateTime fromUtc, DateTime toUtc,
+        CancellationToken ct = default);
 
     Task AddAsync(Activity activity, CancellationToken ct = default);
 

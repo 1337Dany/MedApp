@@ -58,7 +58,7 @@ self-hosted GitHub Actions runner on the server (label `medapp-prod`), so the se
 
 1. the server's own clone (`/srv/diploma/medapp-prod`) is moved to the pushed commit (`git reset --hard`);
 2. `infra/scripts/deploy.sh` dumps the database to `backups/` (last 14 kept), rebuilds and restarts the
-   production profile as compose project `medapp-prod` with migrations on, waits until the API answers
+   production profile as compose project `medapp-prod` with migrations on, waits until `/api/health` answers
    through nginx and fails the job with the API logs if it does not.
 
 The clone keeps everything that is not in git: the production `.env` (`FRONTEND_PORT=80`, own
@@ -95,6 +95,8 @@ otherwise a pull request from a fork could change a workflow to run on the serve
 | `DB_MIGRATE_ON_STARTUP` | Apply pending EF Core migrations when the API starts |
 | `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_KEY` | Token signing; the API refuses to start without a key of 32+ characters |
 | `JWT_ACCESS_TOKEN_MINUTES`, `JWT_REFRESH_TOKEN_DAYS`, `JWT_CLOCK_SKEW_SECONDS` | Token lifetimes |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Mail server for "Forgot password?". Without `SMTP_HOST` no mail is sent (Development logs the reset link instead) |
+| `APP_PUBLIC_URL` | Address of the web app as users open it; reset links start with it. Required with `SMTP_HOST` |
 
 `appsettings*.json` are committed without secrets; keep secrets in `.env`, user-secrets or environment variables.
 
@@ -251,6 +253,8 @@ erDiagram
 | Endpoint | Notes |
 |---|---|
 | `POST /api/auth/register \| login \| refresh \| logout`, `GET /api/auth/me` | Register/login rate-limited per client IP |
+| `POST /api/auth/change-password` | Checks the current password, signs every other session out, answers with new tokens |
+| `POST /api/auth/forgot-password`, `POST /api/auth/reset-password` | Mails a single-use link (valid 60 minutes) and sets a new password with its token; the first answers 204 for every address |
 | `GET/POST /api/subjects`, `GET/PUT/DELETE /api/subjects/{id}` | Delete removes the subject's topics and activities |
 | `GET /api/topics`, `GET/POST /api/subjects/{id}/topics`, `GET/PUT/DELETE /api/topics/{id}` | A changed rating counts as a review |
 | `GET/POST /api/activities`, `GET/PUT/DELETE /api/activities/{id}`, `PATCH /api/activities/{id}/status` | `?from=&to=` window includes recurring series; status with `occurrenceStart` marks one occurrence of a series |
@@ -258,7 +262,9 @@ erDiagram
 | `GET /api/study-strategies`, `GET /api/activity-types` | Seeded lookups |
 | `POST /api/planning/generate`, `GET /api/planning/warnings` | Study planner |
 | `PUT /api/users/me` | Profile and data-sharing consent |
+| `DELETE /api/users/me` | Deletes the own account with all its data; the password in the body confirms it. Refused for the only admin |
 | `GET /api/users`, `PUT /api/users/{id}/role` | Admin only |
 | `GET /api/teacher/analytics` | Teacher and admin |
+| `GET /api/health` | Public; 200 once the API reaches its database (used by the deploy script) |
 
 Full schemas: Swagger UI at `http://localhost:<API_HTTP_PORT>/swagger` in the Development environment.

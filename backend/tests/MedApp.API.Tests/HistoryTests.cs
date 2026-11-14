@@ -579,4 +579,20 @@ public class HistoryTests
         await holder.DisposeAsync();
         Assert.Equal(HttpStatusCode.OK, (await waiting).StatusCode);
     }
+
+    [Fact]
+    public async Task The_last_day_of_a_series_west_of_utc_is_found_from_the_next_utc_day()
+    {
+        var client = await TestClient.CreateUserClientAsync(_factory);
+        // 20:00 on 10 March in Los Angeles is 04:00 UTC on the 11th; the series ends on its local day, the 10th.
+        var start = new DateTime(2027, 3, 11, 4, 0, 0, DateTimeKind.Utc);
+        await CreateAsync(client, TestClient.Activity(startTime: start.ToString("O"),
+            recurrence: new { frequency = "daily", daysOfWeek = Array.Empty<string>(), until = "2027-03-10" }));
+
+        // A range that begins on the UTC day after the last local day (16:30 in Los Angeles on the 10th).
+        var from = new DateTime(2027, 3, 11, 0, 30, 0, DateTimeKind.Utc);
+        var occurrences = await OccurrencesInAsync(client, "America/Los_Angeles", from, from.AddDays(1));
+
+        Assert.Equal(start, Assert.Single(occurrences).StartTime);
+    }
 }

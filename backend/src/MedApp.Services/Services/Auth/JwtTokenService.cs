@@ -12,10 +12,14 @@ public class JwtTokenService : IJwtTokenService
 {
     private readonly JwtOptions _options;
     private readonly JwtSecurityTokenHandler _handler = new();
+    private readonly SigningCredentials _credentials;
 
+    // Registered as a singleton: the key and the handler are built once.
     public JwtTokenService(IOptions<JwtOptions> options)
     {
         _options = options.Value;
+        _credentials = new SigningCredentials(
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.Key)), SecurityAlgorithms.HmacSha256);
     }
 
     public (string Token, DateTime ExpiresAt) GenerateAccessToken(User user)
@@ -35,16 +39,13 @@ public class JwtTokenService : IJwtTokenService
             new(ClaimTypes.Role, user.Role.ToString())
         };
 
-        var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.Key));
-        var credentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
-
         var jwt = new JwtSecurityToken(
             issuer: _options.Issuer,
             audience: _options.Audience,
             claims: claims,
             notBefore: now,
             expires: expiresAt,
-            signingCredentials: credentials);
+            signingCredentials: _credentials);
 
         return (_handler.WriteToken(jwt), expiresAt);
     }

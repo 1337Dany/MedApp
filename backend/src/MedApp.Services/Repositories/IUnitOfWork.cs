@@ -2,6 +2,7 @@ namespace MedApp.Services.Repositories;
 
 public interface IUnitOfWork
 {
+    // Throws UniqueConstraintException when the save breaks a unique index.
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 
     // A database transaction; disposing it without CommitAsync rolls it back. Inside a running transaction it

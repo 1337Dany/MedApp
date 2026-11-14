@@ -37,10 +37,10 @@ fi
 # 2. Build and restart. Every deploy is preceded by a dump, so migrations may run on start.
 DB_MIGRATE_ON_STARTUP=true $COMPOSE up -d --build --remove-orphans
 
-# 3. Health check: an anonymous request to a protected route gets 401 once the API is up behind nginx.
+# 3. Health check: /api/health answers 200 once the API is up behind nginx and reaches the database.
 echo "Waiting for http://localhost:$PORT ..."
 i=0
-until [ "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PORT/api/auth/me")" = "401" ]; do
+until [ "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PORT/api/health")" = "200" ]; do
   i=$((i + 1))
   if [ "$i" -ge 60 ]; then
     echo "The app did not come up:" >&2

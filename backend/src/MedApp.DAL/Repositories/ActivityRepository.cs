@@ -36,7 +36,9 @@ public class ActivityRepository : IActivityRepository
 
         if (from is not null)
         {
-            var fromDate = DateOnly.FromDateTime(from.Value);
+            // Until is a local date: west of UTC its last occurrence starts on the next UTC day, hence the margin.
+            // The caller expands the series and keeps what really falls into the range.
+            var fromDate = DateOnly.FromDateTime(from.Value).AddDays(-1);
             query = query.Where(a =>
                 a.StartTime >= from ||
                 (a.IsRecurring && (a.RecurringOptions!.Until == null || a.RecurringOptions.Until >= fromDate)));
@@ -50,6 +52,9 @@ public class ActivityRepository : IActivityRepository
             .Where(a => a.UserId == userId && a.IsAutoPlanned && a.Status == Status.Scheduled && a.StartTime >= fromUtc)
             .ToListAsync(ct);
 
+    public Task<List<Activity>> GetUnrecordedAsync(Guid userId, DateTime nowUtc, CancellationToken ct = default) =>
+        Unrecorded(_db.Activities.Where(a => a.UserId == userId), nowUtc).ToListAsync(ct);
+
     public Task<List<Activity>> GetByUserIdsAsync(IReadOnlyCollection<Guid> userIds, DateTime fromUtc, DateTime toUtc,
         CancellationToken ct = default) =>
         _db.Activities
@@ -57,13 +62,17 @@ public class ActivityRepository : IActivityRepository
             .Where(a => userIds.Contains(a.UserId) && a.StartTime >= fromUtc && a.StartTime < toUtc)
             .ToListAsync(ct);
 
-    public Task<List<Activity>> GetUnrecordedAsync(Guid userId, DateTime nowUtc, CancellationToken ct = default) =>
-        _db.Activities
+    // A series that ended (Until is a local date; in UTC its last occurrence starts at most a day later) and was
+    // recorded after that has nothing left to record, so it is not loaded and expanded on every read for ever.
+    private static IQueryable<Activity> Unrecorded(IQueryable<Activity> activities, DateTime nowUtc) =>
+        activities
             .Include(a => a.RecurringOptions)
             .ThenInclude(ro => ro!.DaysOfWeek)
-            .Where(a => a.UserId == userId && a.StartTime < nowUtc &&
-                        (a.HistoryRecordedUntil == null || (a.IsRecurring && a.HistoryRecordedUntil < nowUtc)))
-            .ToListAsync(ct);
+            .Where(a => a.StartTime < nowUtc &&
+                        (a.HistoryRecordedUntil == null ||
+                         (a.IsRecurring && a.HistoryRecordedUntil < nowUtc &&
+                          (a.RecurringOptions!.Until == null ||
+                           DateOnly.FromDateTime(a.HistoryRecordedUntil.Value) <= a.RecurringOptions.Until.Value.AddDays(2)))));
 
     public Task AddAsync(Activity activity, CancellationToken ct = default)
     {

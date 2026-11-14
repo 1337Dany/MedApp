@@ -39,10 +39,11 @@ public interface IActivityHistoryService
     // False when the series has no occurrence there. Changing when the series occurs brings back deleted coming ones.
     Task<bool> RemoveOccurrenceAsync(Activity series, DateTime startUtc, CancellationToken ct = default);
 
-    // Before an activity is deleted (does not save): removes all its occurrences, past ones included.
+    // Before an activity is deleted: removes all its occurrences, past ones included, right away (inside the
+    // write's transaction, not on save).
     Task ForgetActivityAsync(Activity activity, CancellationToken ct = default);
 
-    // Before a subject is deleted (does not save): removes the occurrences of its activities and its detached ones.
+    // Before a subject is deleted: removes the occurrences of its activities and its detached ones, right away.
     Task ForgetSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default);
 
     // Removes one history entry that has no activity any more; false when the user has no such entry.

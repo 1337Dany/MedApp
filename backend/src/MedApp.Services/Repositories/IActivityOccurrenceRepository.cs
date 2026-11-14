@@ -11,8 +11,14 @@ public interface IActivityOccurrenceRepository
     Task<List<ActivityOccurrence>> GetByActivityIdsAsync(IReadOnlyCollection<Guid> activityIds, DateTime? fromUtc = null,
         CancellationToken ct = default);
 
-    /// <summary>The occurrences that go with a subject: those of its activities and its detached ones.</summary>
-    Task<List<ActivityOccurrence>> GetOfSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default);
+    /// <summary>Deletes every history row of the activity in one statement, right away (not on SaveChanges).</summary>
+    Task<int> DeleteByActivityIdAsync(Guid activityId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes the occurrences that go with a subject (those of its activities and its detached ones) in one
+    /// statement, right away (not on SaveChanges).
+    /// </summary>
+    Task<int> DeleteOfSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default);
 
     /// <summary>The user's history row without an activity; null when there is none with this id.</summary>
     Task<ActivityOccurrence?> GetDetachedAsync(Guid occurrenceId, Guid userId, CancellationToken ct = default);

@@ -32,4 +32,12 @@ public class RefreshTokenRepository : IRefreshTokenRepository
             .Where(rt => rt.UserId == userId && rt.RevokedAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(rt => rt.RevokedAt, now), ct);
     }
+
+    public Task<int> DeleteExpiredForUserAsync(Guid userId, CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        return _db.RefreshTokens
+            .Where(rt => rt.UserId == userId && rt.ExpiresAt < now)
+            .ExecuteDeleteAsync(ct);
+    }
 }

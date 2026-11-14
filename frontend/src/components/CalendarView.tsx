@@ -21,6 +21,18 @@ const STATUS_LABELS: Record<ActivityStatus, string> = {
   skipped: 'Skipped',
 };
 
+const TYPE_COLORS: Record<ActivityType, string> = {
+  studying: '#3b82f6',
+  class: '#8b5cf6',
+  rest: '#10b981',
+  sport: '#f59e0b',
+  work: '#ef4444',
+  meal: '#ec4899',
+  sleep: '#6366f1',
+  commute: '#64748b',
+  'one-time': '#14b8a6',
+};
+
 // One block on the calendar. `activity` is missing for history without an activity (a series that became a one-off).
 interface CalendarItem {
   key: string;
@@ -45,13 +57,7 @@ export function CalendarView() {
   // Sunday 00:00 of the displayed week.
   const weekStart = useMemo(() => addDays(startOfDay(currentDate), -currentDate.getDay()), [currentDate]);
 
-  const weekDays = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => {
-      const date = new Date(weekStart);
-      date.setDate(weekStart.getDate() + i);
-      return date;
-    });
-  }, [weekStart]);
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
   // From the day before, so an occurrence that continues past midnight into the week is drawn.
   const { occurrences: history, error, retry } = useOccurrences(addDays(weekStart, -1), addDays(weekStart, 7));
@@ -60,8 +66,9 @@ export function CalendarView() {
   // ago is hidden right away, also when the next read fails.
   const weekOccurrences = useMemo((): CalendarItem[] => {
     const items: CalendarItem[] = [];
+    const byId = new Map(activities.map((a) => [a.id, a]));
     (history ?? []).forEach((o, i) => {
-      const activity = o.activityId ? activities.find((a) => a.id === o.activityId) : undefined;
+      const activity = o.activityId ? byId.get(o.activityId) : undefined;
       if (o.activityId && !activity) return;
       items.push({
         key: `${o.id ?? o.activityId ?? i}-${o.start.getTime()}`,
@@ -101,27 +108,14 @@ export function CalendarView() {
   const getBlocksForSlot = (dayIndex: number, hour: number) =>
     blocksByDay[dayIndex].filter((block) => block.start.getHours() === hour);
 
-  const previousWeek = () => {
-    const newDate = new Date(currentDate);
-    newDate.setDate(newDate.getDate() - 7);
-    setCurrentDate(newDate);
-  };
-
-  const nextWeek = () => {
-    const newDate = new Date(currentDate);
-    newDate.setDate(newDate.getDate() + 7);
-    setCurrentDate(newDate);
-  };
+  const previousWeek = () => setCurrentDate(addDays(currentDate, -7));
+  const nextWeek = () => setCurrentDate(addDays(currentDate, 7));
 
   const goToToday = () => {
     setCurrentDate(new Date());
   };
 
   const handleSlotClick = (dayIndex: number, hour: number) => {
-    const date = weekDays[dayIndex];
-    const slotStart = new Date(date);
-    slotStart.setHours(hour, 0, 0, 0);
-    
     setNewActivitySlot({ day: dayIndex, hour });
     setSelectedActivity(null);
     setSelectedOccurrence(null);
@@ -145,26 +139,9 @@ export function CalendarView() {
     setIsModalOpen(true);
   };
 
-  const getActivityColor = (item: CalendarItem) => {
-    if (item.subjectId) {
-      const subject = subjects.find((s) => s.id === item.subjectId);
-      if (subject) return subject.color;
-    }
-
-    const typeColors = {
-      studying: '#3b82f6',
-      class: '#8b5cf6',
-      rest: '#10b981',
-      sport: '#f59e0b',
-      work: '#ef4444',
-      meal: '#ec4899',
-      sleep: '#6366f1',
-      commute: '#64748b',
-      'one-time': '#14b8a6',
-    };
-
-    return typeColors[item.type] || '#6b7280';
-  };
+  const subjectColors = useMemo(() => new Map(subjects.map((s) => [s.id, s.color])), [subjects]);
+  const getActivityColor = (item: CalendarItem) =>
+    (item.subjectId && subjectColors.get(item.subjectId)) || TYPE_COLORS[item.type] || '#6b7280';
 
   return (
     <div className="space-y-4">

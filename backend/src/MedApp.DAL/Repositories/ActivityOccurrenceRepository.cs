@@ -35,11 +35,16 @@ public class ActivityOccurrenceRepository : IActivityOccurrenceRepository
         return query.ToListAsync(ct);
     }
 
-    public Task<List<ActivityOccurrence>> GetOfSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default) =>
+    public Task<int> DeleteByActivityIdAsync(Guid activityId, CancellationToken ct = default) =>
+        _db.ActivityOccurrences
+            .Where(o => o.ActivityId == activityId)
+            .ExecuteDeleteAsync(ct);
+
+    public Task<int> DeleteOfSubjectAsync(Guid subjectId, Guid userId, CancellationToken ct = default) =>
         _db.ActivityOccurrences
             .Where(o => o.UserId == userId &&
                         (o.ActivityId == null ? o.SubjectId == subjectId : o.Activity!.SubjectId == subjectId))
-            .ToListAsync(ct);
+            .ExecuteDeleteAsync(ct);
 
     public Task<ActivityOccurrence?> GetDetachedAsync(Guid occurrenceId, Guid userId, CancellationToken ct = default) =>
         _db.ActivityOccurrences
@@ -49,9 +54,11 @@ public class ActivityOccurrenceRepository : IActivityOccurrenceRepository
     // is limited: past the timeout Postgres raises 55P03, which the API answers with 503.
     public async Task LockUserHistoryAsync(Guid userId, CancellationToken ct = default)
     {
-        var key = BitConverter.ToInt64(userId.ToByteArray(), 0) ^ BitConverter.ToInt64(userId.ToByteArray(), 8);
-        await _db.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '5s'", ct);
-        await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({key})", ct);
+        var bytes = userId.ToByteArray();
+        var key = BitConverter.ToInt64(bytes, 0) ^ BitConverter.ToInt64(bytes, 8);
+        // One round trip: the timeout and the lock travel in the same batch.
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"SET LOCAL lock_timeout = '5s'; SELECT pg_advisory_xact_lock({key})", ct);
     }
 
     public Task AddAsync(ActivityOccurrence occurrence, CancellationToken ct = default)

@@ -55,8 +55,9 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
     const todayStatuses = todayOccurrences?.map((o) => o.status) ?? null;
     const completedToday = todayStatuses?.filter((status) => status === 'done').length ?? 0;
 
+    // Exam dates are local midnights, so today's exam is compared with the start of today, not with the clock.
     const upcomingExams = subjects
-      .filter((s) => s.examDate && new Date(s.examDate) > new Date())
+      .filter((s) => s.examDate && new Date(s.examDate) >= today)
       .sort((a, b) => new Date(a.examDate!).getTime() - new Date(b.examDate!).getTime())
       .slice(0, 3);
 
@@ -76,7 +77,7 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
       urgentSubjects,
       totalTopics: topics.length,
     };
-  }, [subjects, topics, todayOccurrences]);
+  }, [subjects, topics, todayOccurrences, today]);
 
   const getKnowledgePercentage = (count: number) => {
     return stats.totalTopics > 0 ? Math.round((count / stats.totalTopics) * 100) : 0;
@@ -276,8 +277,9 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
         {stats.upcomingExams.length > 0 ? (
           <div className="space-y-3">
             {stats.upcomingExams.map((subject) => {
-              const daysUntil = Math.ceil(
-                (new Date(subject.examDate!).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+              // Whole calendar days; rounding absorbs the hour a daylight-saving change adds or removes.
+              const daysUntil = Math.round(
+                (new Date(subject.examDate!).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
               );
               return (
                 <div
@@ -297,7 +299,9 @@ export function Dashboard({ onViewCalendar }: DashboardProps) {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-medium text-gray-900">{daysUntil} days</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {daysUntil === 0 ? 'Today' : `${daysUntil} day${daysUntil === 1 ? '' : 's'}`}
+                    </p>
                     <p className="text-xs text-gray-600 capitalize">{subject.mode} mode</p>
                   </div>
                 </div>

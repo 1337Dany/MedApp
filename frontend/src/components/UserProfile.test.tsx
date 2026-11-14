@@ -108,6 +108,78 @@ describe('ProfileModal', () => {
     expect(menuButton()).toHaveTextContent('Jane Doe');
   });
 
+  it('"Set New Password" changes the password, keeps the session and leaves the modal open', async () => {
+    const { modal, events, user } = await openProfile();
+    const oldPassword = user.password;
+
+    await events.click(within(modal).getByRole('button', { name: 'Change Password' }));
+    await events.type(field('Current Password', modal), oldPassword);
+    await events.type(field('New Password', modal), 'Brand-new1');
+    await events.click(within(modal).getByRole('button', { name: 'Set New Password' }));
+
+    expect(await within(modal).findByText('Password changed. Other devices have been signed out.')).toBeInTheDocument();
+    expect(fakeApi.writes(/auth\/change-password/)[0].body).toEqual({
+      currentPassword: oldPassword,
+      newPassword: 'Brand-new1',
+    });
+    expect(fakeApi.users.find((u) => u.id === user.id)!.password).toBe('Brand-new1');
+    // The tokens of the answer replaced the revoked ones: the next request is still signed in.
+    await events.click(within(modal).getByRole('button', { name: 'Save' }));
+    expect(screen.queryByRole('heading', { name: 'Profile Settings' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+  });
+
+  it('checks the new password before sending and shows the API error for a wrong current one', async () => {
+    const { modal, events } = await openProfile();
+
+    await events.click(within(modal).getByRole('button', { name: 'Change Password' }));
+    await events.type(field('Current Password', modal), 'not-my-password');
+    await events.type(field('New Password', modal), 'weak');
+    await events.click(within(modal).getByRole('button', { name: 'Set New Password' }));
+    expect(within(modal).getByText('Password must be at least 8 characters long.')).toBeInTheDocument();
+    expect(fakeApi.writes()).toHaveLength(0);
+
+    await events.clear(field('New Password', modal));
+    await events.type(field('New Password', modal), 'Brand-new1');
+    await events.click(within(modal).getByRole('button', { name: 'Set New Password' }));
+    expect(await within(modal).findByText('The current password is not correct.')).toBeInTheDocument();
+
+    await events.click(within(modal).getByRole('button', { name: 'Keep Current' }));
+    expect(within(modal).queryByText('The current password is not correct.')).not.toBeInTheDocument();
+    expect(within(modal).getByRole('button', { name: 'Change Password' })).toBeInTheDocument();
+  });
+
+  it('"Delete Account" asks for the password, deletes the account and returns to sign in', async () => {
+    const { modal, events, user } = await openProfile();
+
+    await events.click(within(modal).getByRole('button', { name: 'Delete Account' }));
+    await events.click(within(modal).getByRole('button', { name: 'Delete My Account for Good' }));
+    expect(within(modal).getByText('Enter your password to confirm.')).toBeInTheDocument();
+
+    await events.type(field('Password to Confirm', modal), 'not-my-password');
+    await events.click(within(modal).getByRole('button', { name: 'Delete My Account for Good' }));
+    expect(await within(modal).findByText('The password is not correct.')).toBeInTheDocument();
+    expect(fakeApi.users).toHaveLength(1);
+
+    await events.clear(field('Password to Confirm', modal));
+    await events.type(field('Password to Confirm', modal), user.password);
+    await events.click(within(modal).getByRole('button', { name: 'Delete My Account for Good' }));
+
+    expect(await screen.findByRole('heading', { name: 'Sign In' })).toBeInTheDocument();
+    expect(fakeApi.users).toHaveLength(0);
+    expect(tokenStorage.getRefreshToken()).toBeNull();
+  });
+
+  it('"Keep My Account" closes the delete form without a request', async () => {
+    const { modal, events } = await openProfile();
+
+    await events.click(within(modal).getByRole('button', { name: 'Delete Account' }));
+    await events.click(within(modal).getByRole('button', { name: 'Keep My Account' }));
+
+    expect(within(modal).queryByText('Password to Confirm')).not.toBeInTheDocument();
+    expect(fakeApi.writes()).toHaveLength(0);
+  });
+
   it('does not offer the consent switch to staff', async () => {
     const { events } = await renderApp({ user: { role: 'teacher' } });
     await screen.findByRole('heading', { name: 'Teacher Dashboard' });

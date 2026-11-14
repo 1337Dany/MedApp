@@ -187,6 +187,11 @@ Open it from your name in the top-right corner. Here you can:
 
 - change your **name** and **date of birth**
 - switch **data sharing** with teachers on or off. Turning it off removes your data from teacher statistics **immediately**.
+- change your **password** (you enter the current one; other devices are signed out)
+- **delete your account** with all its data. This asks for your password and cannot be undone.
+
+Forgot your password? On the sign-in screen choose **Forgot password?**, enter your email address and follow the
+link in the mail. The link works once and is valid for one hour.
 
 ---
 
